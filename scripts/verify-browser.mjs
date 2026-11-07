@@ -31,7 +31,7 @@ export const chrome = () => chromium.launch({
 });
 export const imageName = (i) => `${String(i + 1).padStart(2, "0")}.png`;
 
-export async function openDeck(browser, file, width, reduced, errors) {
+export async function openDeck(browser, file, width, reduced, errors, { clock = false } = {}) {
   const page = await browser.newPage({ viewport: { width, height: viewportHeight }, deviceScaleFactor: 1,
     reducedMotion: reduced ? "reduce" : "no-preference" });
   page.setDefaultTimeout(30_000);
@@ -42,6 +42,9 @@ export async function openDeck(browser, file, width, reduced, errors) {
     if (m.type() === "error" || (m.type() === "warning" && m.text().includes("puppet-show:"))) errors.push(m.text());
   });
   try {
+    // Fake time must be installed before navigation so the deck's first frame,
+    // its autoplay and the flight observer all run on the virtual clock.
+    if (clock) await page.clock.install({ time: 0 });
     await page.goto(pathToFileURL(resolve(file)).href);
     await waitForDeck(page, () => !!document.querySelector('.ps-deck[data-total]'));
     await page.evaluate(() => document.fonts.ready);
@@ -53,11 +56,28 @@ export async function openDeck(browser, file, width, reduced, errors) {
   return page;
 }
 
-export async function paused(page, index) {
-  await waitForDeck(page, (i) => {
-    const d = document.querySelector(".ps-deck");
-    return d?.dataset.state === "paused" && Number(d.dataset.index) === i;
-  }, index);
+const isPaused = (i) => {
+  const d = document.querySelector(".ps-deck");
+  return d?.dataset.state === "paused" && Number(d.dataset.index) === i;
+};
+
+/**
+ * Advance the page's fake clock until `predicate` holds. Playwright's clock
+ * drives rAF, so a full animation plays in milliseconds of real time while
+ * keeping the player's own frame math. Bounded: a step that never settles
+ * still fails with the usual diagnostic instead of hanging.
+ */
+export async function runUntil(page, predicate, arg, budget = 20_000, slice = 64) {
+  for (let elapsed = 0; elapsed <= budget; elapsed += slice) {
+    if (await page.evaluate(predicate, arg)) return;
+    await page.clock.runFor(slice);
+  }
+  throw await diagnostic(page, new Error(`condition not reached within ${budget}ms of playback`));
+}
+
+export async function paused(page, index, clock = false) {
+  if (clock) return runUntil(page, isPaused, index);
+  await waitForDeck(page, isPaused, index);
 }
 
 /**
@@ -69,20 +89,23 @@ export async function advance(page) {
   const next = page.locator(".ps-nav .ps-primary");
   const deck = page.locator(".ps-deck");
   const before = await deck.getAttribute("data-index");
-  const moved = () =>
+  // Resolve as soon as the deck does anything visible: a new step, playback,
+  // or an in-place question. Waiting only for a new index would burn the whole
+  // timeout on every revealed question.
+  const reacted = () =>
     page
       .waitForFunction((b) => {
         const d = document.querySelector(".ps-deck");
-        return d.dataset.state === 'error' || d.dataset.index !== b || d.dataset.state === "playing";
+        return d.dataset.state === 'error' || d.dataset.index !== b || d.dataset.state === "playing" || !!d.dataset.asking;
       }, before, { timeout: 1500 })
       .then(() => true, () => false);
   for (let attempt = 0; attempt < 3; attempt++) {
     if ((await deck.getAttribute("data-asking")) === "required") await page.keyboard.press("1");
     await next.click();
-    if (await moved()) {
-      if (await deck.getAttribute('data-state') === 'error') throw await diagnostic(page, new Error('scene error'));
-      return;
-    }
+    if (!(await reacted())) continue;
+    if (await deck.getAttribute('data-state') === 'error') throw await diagnostic(page, new Error('scene error'));
+    // A revealed question keeps the index; the next press skips/submits it.
+    if (await deck.getAttribute("data-index") !== before) return;
   }
   throw await diagnostic(page, new Error(`"next" did not advance from step ${Number(before) + 1} (a question may be blocking)`));
 }
@@ -188,26 +211,36 @@ export async function endpoints(browser, { file, out, width, a11y = true }) {
   finally { await page.close(); }
 }
 
-export async function motion(browser, { file, out, a11y = true, width = 720 }) {
+const midStep = (index) => {
+  const d = document.querySelector(".ps-deck");
+  const p = parseFloat(document.querySelector(".ps-cell.on")?.style.getPropertyValue("--p") ?? "0");
+  return Number(d?.dataset.index) === index && (p >= 0.5 || d.dataset.state === "paused");
+};
+
+/**
+ * Playback pass: every step plays, is captured mid-motion, then settles.
+ * `clock` (default) runs playback on Playwright's fake clock, so a 1.5s step
+ * costs ~20ms of wall time instead of 1.5s. `clock: false` replays in real
+ * time for timing-sensitive debugging; the checks are identical.
+ * Accessibility is not audited here: the settled states are the same ones the
+ * endpoint pass audits at this width, so auditing twice only doubled the cost.
+ */
+export async function motion(browser, { file, out, width = 720, clock = true }) {
   mkdirSync(out, { recursive: true });
   const errors = [], signatures = [], issues = [], samples = [];
-  const page = await openDeck(browser, file, width, false, errors);
+  const page = await openDeck(browser, file, width, false, errors, { clock });
   try {
     const total = Number(await page.locator(".ps-deck").getAttribute("data-total"));
     for (let i = 0; i < total; i++) {
-      // Wait on frame-driven progress, never a guessed wall-clock sleep. Very
-      // short/instant steps can finish before a screenshot; record that fact.
-      await waitForDeck(page, (index) => {
-        const d = document.querySelector(".ps-deck");
-        const p = parseFloat(document.querySelector(".ps-cell.on")?.style.getPropertyValue("--p") ?? "0");
-        return Number(d?.dataset.index) === index && (p >= 0.5 || d.dataset.state === "paused");
-      }, i, { polling: "raf" });
+      // Wait on frame-driven progress, never a guessed sleep. Very short or
+      // instant steps can finish before a capture; samples record that fact.
+      if (clock) await runUntil(page, midStep, i);
+      else await waitForDeck(page, midStep, i, { polling: "raf" });
       samples.push(await page.locator(".ps-cell.on").evaluate((e) => Number(e.style.getPropertyValue("--p"))));
       await page.screenshot({ path: resolve(out, imageName(i)), fullPage: true });
-      await paused(page, i);
+      await paused(page, i, clock);
       signatures.push(await signature(page));
       issues.push(...(await layoutIssues(page)).map((s) => `step ${i + 1}: ${s}`));
-      if (a11y) issues.push(...(await page.evaluate(inspectA11y)).map(s => `step ${i + 1}: ${s}`));
       if (i + 1 < total) await advance(page);
     }
     issues.push(...await page.evaluate(() => window.__puppetShowFlights ?? []));

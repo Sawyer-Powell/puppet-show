@@ -56,7 +56,8 @@ deck(document.body, { path: "puppet-show://demo", chapters: [{ title: "intro", s
 | `npm test` | runtime semantics (node, no browser) |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run verify -- <name> --quick` | inner loop: scoped typecheck + build only, fail fast |
-| `npm run verify -- <name>` | typecheck + build + screenshots at 720/420 + live motion pass + replay check + contact sheets |
+| `npm run verify -- <name>` | typecheck + build + screenshots at 720/420 + live motion pass + replay check + contact sheets (~10-15s) |
+| `npm run verify -- <name> --realtime` | same checks, real-time playback (timing debugging; slower) |
 
 The one example, `examples/puppet-show-explained`, explains puppet-show itself:
 scenes as generators, `yield` vs `yield*`, logical time, and seeking by replay.

@@ -14,6 +14,9 @@ Explainer design guidance lives in [`skills/explainer-design/SKILL.md`](./skills
 2. Inner loop: `npm run verify -- <name> --quick` runs only the scoped
    typecheck and build in seconds, stopping on the first failure.
    Gate: `npm run verify -- <name>` (note the `--`: npm swallows flags without it).
+   A full gate takes ~10-15 s because the 720 and 420 passes run concurrently
+   and live playback runs on a fake clock (`--realtime` replays in wall time
+   for timing debugging; the checks are identical).
    It typechecks your example, builds `dist/examples/<name>/index.html`,
    screenshots every step at 720 px (Notion) and 420 px (phone), plays every
    step live with a mid-motion capture, checks that replaying a step lands on
@@ -25,9 +28,10 @@ Explainer design guidance lives in [`skills/explainer-design/SKILL.md`](./skills
    are reported, non-failing. Scene errors fail immediately; timeouts include
    deck state and page errors. Keep the stage within the viewport at 720px;
    flights must start and land on screen. Reserve target space before flight;
-   `fly` never scrolls. At every settled step
-   and width it checks AA text contrast, names, radio state/roving tabindex,
-   nested controls and duplicate ids; first-step Tab navigation checks reachability
+   `fly` never scrolls. Layout, spill and clipping checks run at every settled
+   step and width; AA text contrast, names, radio state/roving tabindex,
+   nested controls and duplicate ids are width-independent, so they run at the
+   primary 720 px width only. First-step Tab navigation checks reachability
    and visible focus (roving radio/tab members intentionally share one Tab stop).
    `--no-a11y` is a debugging escape only, never valid for handoff.
    `npm run check` also gates design literals/token sync and public-export docs.

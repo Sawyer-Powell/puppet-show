@@ -9,9 +9,10 @@ import { chrome, endpoints, motion, sheet, viewportHeight } from "./verify-brows
 import { rejectSwallowedFlags } from "./verify-cli.mjs";
 
 function argumentsFor(args) {
-  let name, widths = [720, 420], seenWidth = false, quick = false, a11y = true;
+  let name, widths = [720, 420], seenWidth = false, quick = false, a11y = true, realtime = false;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--quick" && !quick) quick = true;
+    else if (args[i] === "--realtime" && !realtime) realtime = true;
     else if (args[i] === "--no-a11y" && a11y) a11y = false;
     else if (args[i] === "--width" && !seenWidth) {
       seenWidth = true;
@@ -20,10 +21,10 @@ function argumentsFor(args) {
       widths = [...new Set(value.split(",").map(Number))];
       if (widths.some((w) => w < 200 || w > 4000)) throw new Error("widths must be between 200 and 4000");
     } else if (!name && /^[a-zA-Z][\w-]*$/.test(args[i])) name = args[i];
-    else throw new Error(`unknown argument ${JSON.stringify(args[i])}; use npm run verify -- <name> [--quick] [--width 720,420] [--no-a11y] (npm may swallow flags without --)`);
+    else throw new Error(`unknown argument ${JSON.stringify(args[i])}; use npm run verify -- <name> [--quick] [--width 720,420] [--no-a11y] [--realtime] (npm may swallow flags without --)`);
   }
-  if (!name || !sourceDir(name)) throw new Error("usage: npm run verify -- <example> [--quick] [--width 720,420] [--no-a11y]; example must exist in examples/ or recipes/");
-  return { name, widths, quick, a11y };
+  if (!name || !sourceDir(name)) throw new Error("usage: npm run verify -- <example> [--quick] [--width 720,420] [--no-a11y] [--realtime]; example must exist in examples/ or recipes/");
+  return { name, widths, quick, a11y, realtime };
 }
 
 let failed = false;
@@ -58,7 +59,7 @@ function difference(a, b) {
 
 async function main() {
   rejectSwallowedFlags();
-  const { name, widths, quick, a11y } = argumentsFor(process.argv.slice(2));
+  const { name, widths, quick, a11y, realtime } = argumentsFor(process.argv.slice(2));
   if (!a11y) console.warn("DEBUG ONLY: --no-a11y skips accessibility/keyboard gates; not valid for handoff.");
   const start = Date.now();
   console.log(`verify ${name}: ${quick ? "quick (scoped typecheck + build only)" : `endpoint widths ${widths.join(", ")}px; motion ${[...new Set([720, ...widths])].join(", ")}px; viewport height ${viewportHeight}px`}`);
@@ -79,55 +80,59 @@ async function main() {
   mkdirSync(root, { recursive: true });
   const browser = await chrome();
   const results = {}, artifacts = [];
+  // Each pass is an independent page, so all of them run at once; awaiting
+  // them only orders the report. The 720 pass is always included as the seek
+  // reference, even when custom widths omit it.
+  const settledWidths = [...new Set([720, ...widths])];
+  const referenceRequested = widths.includes(720);
   try {
-    // Include a seek reference at 720 even when custom endpoint widths omit it.
-    let reference;
-    for (const width of widths) {
-      try {
-        const out = resolve(root, String(width));
-        const result = await endpoints(browser, { file, out, width, a11y });
-        results[width] = result;
-        if (result.tallStages.length) console.log(`NOTE tall stages ${width}×${viewportHeight}px (non-failing): ${result.tallStages.join('; ')}`);
-        if (width === 720) reference = result;
-        report(`endpoints ${width}px (${result.total} steps)`, [...result.errors, ...result.issues]);
+    const settle = settledWidths.map((width) => ({
+      width,
+      // Contrast/names/keyboard are width-independent style facts: audit them
+      // on the primary width only. Layout/clipping still run at every width.
+      job: endpoints(browser, { file, out: resolve(root, String(width)), width, a11y: a11y && width === 720 })
+        .then((result) => ({ result }), (error) => ({ error })),
+    }));
+    const playback = settledWidths.map((width) => ({
+      width,
+      job: motion(browser, { file, out: resolve(root, width === 720 ? "motion" : `motion-${width}`), width, clock: !realtime })
+        .then((result) => ({ result }), (error) => ({ error })),
+    }));
+    for (const { width, job } of settle) {
+      const { result, error } = await job;
+      const label = width === 720 && !referenceRequested ? "replay reference 720px" : `endpoints ${width}px (${result?.total} steps)`;
+      if (error) { report(label, [error.message]); continue; }
+      results[width] = result;
+      if (result.tallStages.length) console.log(`NOTE tall stages ${width}×${viewportHeight}px (non-failing): ${result.tallStages.join('; ')}`);
+      report(label, [...result.errors, ...result.issues]);
+      if (width !== 720 || referenceRequested) {
         const destination = resolve(root, `sheet-${width}.png`);
-        await sheet(browser, out, result.total, destination, `${name} · ${width}px endpoints`);
-        artifacts.push(destination);
-        report(`contact sheet ${width}px`);
-      } catch (e) { report(`endpoints/contact sheet ${width}px`, [e.message]); }
-    }
-    try {
-      if (!reference) {
-        reference = await endpoints(browser, { file, out: resolve(root, "720-reference"), width: 720, a11y });
-        report("replay reference 720px", [...reference.errors, ...reference.issues]);
+        try {
+          await sheet(browser, resolve(root, String(width)), result.total, destination, `${name} · ${width}px endpoints`);
+          artifacts.push(destination);
+          report(`contact sheet ${width}px`);
+        } catch (e) { report(`contact sheet ${width}px`, [e.message]); }
       }
-      const out = resolve(root, "motion");
-      const live = await motion(browser, { file, out, a11y });
-      results.motion = live;
-      report(`live motion 720px (${live.total} steps)`, [...live.errors, ...live.issues]);
-      const mismatch = Array.from({ length: Math.max(reference.total, live.total) }, (_, i) => i)
-        .find((i) => reference.signatures[i] !== live.signatures[i]);
-      report("replay equality", mismatch === undefined ? [] : [`step ${mismatch + 1}: ${difference(reference.signatures[mismatch], live.signatures[mismatch])}\n    If intentionally live telemetry, mark its element data-verify-ignore.`]);
-      const destination = resolve(root, "sheet-motion.png");
-      await sheet(browser, out, live.total, destination, `${name} · live mid-step`);
-      artifacts.push(destination);
-      report("contact sheet motion");
-    } catch (e) { report("motion/replay/contact sheet", [e.message]); }
-    for (const width of widths.filter(w => w !== 720)) {
+    }
+    for (const { width, job } of playback) {
+      const { result: live, error } = await job;
+      const label = `live motion ${width}px (${live?.total} steps)`;
+      if (error) { report(label, [error.message]); continue; }
+      if (width === 720) results.motion = live; else results[`motion-${width}`] = live;
+      report(label, [...live.errors, ...live.issues]);
+      const reference = results[width];
+      const mismatch = reference
+        ? Array.from({ length: Math.max(reference.total, live.total) }, (_, i) => i).find((i) => reference.signatures[i] !== live.signatures[i])
+        : undefined;
+      const equality = width === 720 ? "replay equality" : `replay equality ${width}px`;
+      if (!reference) report(equality, ["no settled reference for this width"]);
+      else report(equality, mismatch === undefined ? [] : [`step ${mismatch + 1}: ${difference(reference.signatures[mismatch], live.signatures[mismatch])}\n    If intentionally live telemetry, mark its element data-verify-ignore.`]);
+      const destination = resolve(root, width === 720 ? "sheet-motion.png" : `sheet-motion-${width}.png`);
       try {
-        const out = resolve(root, `motion-${width}`);
-        const live = await motion(browser, { file, out, a11y, width });
-        results[`motion-${width}`] = live;
-        report(`live motion ${width}px (${live.total} steps)`, [...live.errors, ...live.issues]);
-        const reference = results[width];
-        if (reference) {
-          const mismatch = live.signatures.findIndex((s, i) => s !== reference.signatures[i]);
-          report(`replay equality ${width}px`, mismatch < 0 ? [] : [`step ${mismatch + 1}: ${difference(reference.signatures[mismatch], live.signatures[mismatch])}`]);
-        }
-        const destination = resolve(root, `sheet-motion-${width}.png`);
-        await sheet(browser, out, live.total, destination, `${name} · ${width}px live mid-step`);
+        await sheet(browser, resolve(root, width === 720 ? "motion" : `motion-${width}`), live.total, destination, `${name} · ${width}px live mid-step`);
         artifacts.push(destination);
-      } catch (e) { report(`motion ${width}px`, [e.message]); }
+        report(width === 720 ? "contact sheet motion" : `contact sheet motion ${width}px`);
+      } catch (e) { report(`contact sheet motion ${width}px`, [e.message]); }
     }
   } finally { await browser.close(); }
   writeFileSync(resolve(root, "results.json"), JSON.stringify({ name, widths, a11y, failed, seconds: (Date.now() - start) / 1000, results }, null, 2));

@@ -613,7 +613,12 @@ state to survive navigation.
 blank lanes, arrows reaching the wrong place, values that did not visibly change,
 clipped text, overflow and layout jumps. `--quick` is only an inner loop;
 full `npm run verify -- <name>` is the gate. Console errors and `puppet-show:` warnings
-fail full verification. Verification uses a fixed **900px viewport height**
+fail full verification. The gate runs its width passes concurrently and plays
+motion on a fake clock, which is why it finishes in seconds; `--realtime` keeps
+the same checks on wall-clock playback for timing debugging. Accessibility
+audits (contrast, names, radio state, roving tabindex, nested controls,
+duplicate ids) are width-independent and run once, at 720px; layout, spill and
+clipping checks run at every width. Verification uses a fixed **900px viewport height**
 (the Notion block height), at 720px and 420px widths by default; full-page PNGs do
 not imply below-the-fold content is visible. Settled checks reject text spilling
 out of its own box (>1px) and highlighted content/cells clipped by auto/scroll
