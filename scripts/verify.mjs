@@ -153,8 +153,10 @@ async function runEdit({ name, file, root, plan, cache, hashes, identity, a11y }
   // Baselines are per capture mode, but the deck's step counts are not part of
   // them: a baseline from a different structure would report chrome like "1/8"
   // against "1/7" as a scene change. Re-key the baseline directory structurally.
+  // The marker describes the addresses this run renders with; baselines are
+  // only written after a complete pass, so an aborted run leaves both alone.
   const editDir = resolve(root, "edit");
-  const structure = JSON.stringify({ total: cache.total, chapters: cache.chapters });
+  const structure = JSON.stringify({ total: addresses.total, chapters: addresses.steps.map((step) => step.chapter) });
   let previousStructure = null;
   try { previousStructure = readFileSync(resolve(editDir, "structure.json"), "utf8").trim(); } catch { /* first edit run */ }
   if (previousStructure !== structure) {
@@ -163,7 +165,7 @@ async function runEdit({ name, file, root, plan, cache, hashes, identity, a11y }
     writeFileSync(resolve(editDir, "structure.json"), structure);
   }
   const browser = await chrome();
-  const entries = {}, notes = [], artifacts = [];
+  const entries = {}, notes = [], artifacts = [], pending = new Map();
   try {
     for (const index of indexes) {
       const step = addresses.steps[index];
@@ -179,7 +181,7 @@ async function runEdit({ name, file, root, plan, cache, hashes, identity, a11y }
       // A step with page/console errors stays uncached so the next run retries it.
       if (!shot.errors.length) entries[index] = { signature: shot.signature, issues, tallStage: shot.tallStage ?? null };
       artifacts.push(out);
-      writeFileSync(baseline, readFileSync(out));
+      pending.set(baseline, readFileSync(out));
       if (before) {
         try {
           const diff = await diffPngs(browser, { before, after: readFileSync(out).toString("base64") });
@@ -193,6 +195,10 @@ async function runEdit({ name, file, root, plan, cache, hashes, identity, a11y }
       }
     }
   } finally { await browser.close(); }
+
+  // A pass that reached here rendered every addressed step, so its baselines
+  // describe the same deck the next edit run will compare against.
+  for (const [baseline, bytes] of pending) writeFileSync(baseline, bytes);
 
   // Fold the fresh endpoint results in; every other pass must re-verify the
   // steps the gate walks (playback, 420px) rather than inherit them.
