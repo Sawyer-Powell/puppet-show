@@ -612,11 +612,13 @@ state to survive navigation.
 **Iterate on one step.** A deck's hash addresses a step (`#chapter/step`, or
 `#chapter/beat-name` for a named `beat`), and loading that hash seeks straight
 there. `npm run scenes -- <name>` lists the addresses and
-`npm run shot -- <name> <address> [--width 720]` renders exactly that step to a
-PNG with the same settled checks the gate runs (~1 s, no deck walk). A shot is a
+`npm run shot -- <name> <address...> [--width 720] [--checks]` renders those
+steps to PNGs with the gate's layout checks (~1 s, no deck walk); `--checks`
+adds the a11y audit. A shot is a
 cold seek: durable module-scope input state (sliders, answers) sits at its
 initial value, unlike the gate, which walks the deck. Address caches live in
-`shots/<name>/addresses.json` and are invalidated by any rebuild.
+`shots/<name>/addresses.json` and are invalidated by any source change (they
+are keyed by a content stamp of the deck's sources, not by mtimes).
 
 **The edit loop renders, the gate proves.** `npm run shot -- <name> <chapter>`
 renders a scene's steps from cold seeks in about a second; `verify --edit` does

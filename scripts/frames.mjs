@@ -5,40 +5,34 @@
 // instead of walking the deck, so iterating on one scene costs one step rather
 // than the whole explainer. `verify` stays the deck-wide gate.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { sourceDir } from "./sources.mjs";
 import { inspectA11y, keyboardIssues } from "./verify-a11y.mjs";
 import { stageSize } from "./verify-visibility.mjs";
+import { sourceStamp } from "./verify-cache.mjs";
 import { advance, diagnostic, layoutIssues, openDeck, paused, signature, viewportHeight, waitForDeck } from "./verify-browser.mjs";
 
 export const distFile = (name) => `dist/examples/${name}/index.html`;
 export const addressCache = (name) => `shots/${name}/addresses.json`;
 
-const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
-  entry.isDirectory() ? walk(join(dir, entry.name)) : [join(dir, entry.name)]);
+export const buildRecord = (name) => `dist/examples/${name}/build.json`;
 
-/** Source files whose changes invalidate a build of this deck. */
-export function sourceFiles(name) {
-  const root = sourceDir(name);
-  if (!root) throw new Error(`no examples/${name}/index.html or recipes/${name}/index.html`);
-  return [...walk("src"), ...walk(root), "vite.config.ts"].filter((file) => existsSync(file));
-}
-
-export function buildStamp(file) {
-  const stat = statSync(file);
-  return `${stat.size}:${Math.round(stat.mtimeMs)}`;
-}
-
-/** Rebuild only when the built deck is older than anything it is built from. */
+/**
+ * Rebuild unless the deck on disk was built from exactly the current sources.
+ * Content, not mtimes: checkout order and coarse timestamps otherwise let a
+ * stale artifact pass as "up to date".
+ */
 export function ensureBuilt(name) {
   const file = distFile(name);
+  const stamp = sourceStamp(name);
+  let current = false;
+  try { current = existsSync(file) && JSON.parse(readFileSync(buildRecord(name), "utf8")).stamp === stamp; } catch { /* rebuild */ }
+  if (current) return { file, stamp, built: false, seconds: 0 };
   const start = Date.now();
-  const built = existsSync(file) && sourceFiles(name).every((source) => statSync(source).mtimeMs <= statSync(file).mtimeMs);
-  if (built) return { file, built: false, seconds: 0 };
   execFileSync(process.execPath, ["scripts/build.mjs", name], { stdio: "inherit" });
-  return { file, built: true, seconds: (Date.now() - start) / 1000 };
+  writeFileSync(buildRecord(name), JSON.stringify({ stamp, builtAt: new Date().toISOString() }, null, 2));
+  return { file, stamp, built: true, seconds: (Date.now() - start) / 1000 };
 }
 
 /**
@@ -64,10 +58,10 @@ export async function inventory(page) {
   return { total, steps };
 }
 
-export function readCachedInventory(name, file) {
+export function readCachedInventory(name, _file) {
   try {
     const cached = JSON.parse(readFileSync(addressCache(name), "utf8"));
-    return cached.build === buildStamp(file) ? cached.inventory : null;
+    return cached.stamp === sourceStamp(name) ? cached.inventory : null;
   } catch { return null; }
 }
 
@@ -90,7 +84,7 @@ export async function loadInventory(browser, { name, file, refresh = false }) {
     const found = await inventory(page);
     if (errors.length) throw new Error(`deck reported errors while indexing: ${errors.join("\n")}`);
     mkdirSync(dirname(addressCache(name)), { recursive: true });
-    writeFileSync(addressCache(name), JSON.stringify({ name, build: buildStamp(file), inventory: found }, null, 2));
+    writeFileSync(addressCache(name), JSON.stringify({ name, stamp: sourceStamp(name), inventory: found }, null, 2));
     return { inventory: found, cached: false };
   } finally { await page.close(); }
 }
@@ -177,7 +171,7 @@ export async function shoot(browser, { name, file, inventory, address, width = 7
     await waitForDeck(page, () => !!document.querySelector(".ps-deck[data-total]"));
     await page.evaluate(() => document.fonts.ready);
     const index = Number(await page.locator(".ps-deck").getAttribute("data-index"));
-    if (index + 1 !== target.index) throw new Error(`address ${target.address} says step ${target.index}, but the deck opened step ${index + 1}; the address cache is stale (rerun without --no-build)`);
+    if (index + 1 !== target.index) throw new Error(`address ${target.address} says step ${target.index}, but the deck opened step ${index + 1}: the deck's step structure moved. Run the full gate (or \`npm run scenes -- <name> --refresh\`) to re-index addresses.`);
     await paused(page, index);
     const issues = await layoutIssues(page);
     if (checks) issues.push(...await page.evaluate(inspectA11y));

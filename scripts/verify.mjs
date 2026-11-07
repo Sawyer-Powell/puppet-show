@@ -157,13 +157,18 @@ async function runEdit({ name, file, root, plan, cache, hashes, identity, a11y }
       const step = addresses.steps[index];
       if (!step) throw new Error(`step ${index + 1} is not in the cached address list; the deck's structure changed — run the full gate`);
       const out = resolve(root, "720", imageName(index));
-      const before = existsSync(out) ? readFileSync(out).toString("base64") : null;
+      // Gate captures walk the deck, the edit loop deep-links; the two are each
+      // deterministic but differ slightly, so compare within the same mode.
+      const baseline = resolve(root, "edit", imageName(index));
+      const before = existsSync(baseline) ? readFileSync(baseline).toString("base64") : null;
       const shot = await shoot(browser, { name, file, inventory: addresses, address: step.address, width: 720, out, checks: a11y });
       const issues = shot.issues.map((issue) => `step ${index + 1}: ${issue}`);
       report(`step ${index + 1} (${step.address})`, [...shot.errors, ...issues]);
       // A step with page/console errors stays uncached so the next run retries it.
       if (!shot.errors.length) entries[index] = { signature: shot.signature, issues, tallStage: shot.tallStage ?? null };
       artifacts.push(out);
+      mkdirSync(resolve(root, "edit"), { recursive: true });
+      writeFileSync(baseline, readFileSync(out));
       if (before) {
         try {
           const diff = await diffPngs(browser, { before, after: readFileSync(out).toString("base64") });
@@ -201,7 +206,7 @@ async function main() {
   // the flag is part of the cache identity. Use `shot` for a layout-only check.
   const auditsA11y = edit ? true : a11y;
   const start = Date.now();
-  console.log(`verify ${name}: ${quick ? "quick (scoped typecheck + build only)" : edit ? `edit loop (720px, changed steps only; run without --edit before handoff)` : `endpoint widths ${widths.join(", ")}px; motion ${[...new Set([720, ...widths])].join(", ")}px; viewport height ${viewportHeight}px`}`);
+  console.log(`verify ${name}: ${quick ? "quick (scoped typecheck + build only)" : edit ? "edit requested (changed steps at 720px when a cache plan applies; otherwise the full gate)" : `endpoint widths ${widths.join(", ")}px; motion ${[...new Set([720, ...widths])].join(", ")}px; viewport height ${viewportHeight}px`}`);
   // Stable config + build info: tsc then only rechecks changed files (~0.3s).
   const cacheDir = resolve("node_modules/.cache/puppet-show", name);
   mkdirSync(cacheDir, { recursive: true });
@@ -226,13 +231,19 @@ async function main() {
   const identity = environment(auditsA11y);
   const hashes = sourceHashes(name);
   const cache = refresh ? null : loadCache(name);
-  const keys = passKeys(widths, realtime);
-  const motionWidths = keys.settledWidths;
-  const allKeys = [...motionWidths.map(String), ...motionWidths.map((width) => keys.motion(width))];
   // Without a browser: sources and environment unchanged, results complete.
   const fastPlan = cache?.chapters
     ? invalidation({ name, chapters: cache.chapters, previous: cache, hashes, identity })
     : { all: true, reason: "no cached results" };
+  // An edit run needs cached addresses and an incremental plan; otherwise fall
+  // back to the whole gate (both widths) rather than half of it.
+  const editUsable = edit && !fastPlan.all && fastPlan.dirty.size > 0 && Boolean(readAddresses(name));
+  const nothingToDo = !fastPlan.all && fastPlan.dirty.size === 0;
+  if (edit && !editUsable && !nothingToDo) console.log(`edit loop: no incremental plan (${fastPlan.reason}); running the full gate instead`);
+  const gateWidths = edit && !editUsable ? [720, 420] : widths;
+  const keys = passKeys(gateWidths, realtime);
+  const motionWidths = keys.settledWidths;
+  const allKeys = [...motionWidths.map(String), ...motionWidths.map((width) => keys.motion(width))];
   const cacheable = !fastPlan.all && fastPlan.dirty.size === 0 && cacheComplete(cache, allKeys, cache.total)
     && motionWidths.every((width) =>
       Array.from({ length: cache.total }, (_, index) => existsSync(resolve(root, String(width), imageName(index)))).every(Boolean));
@@ -285,7 +296,7 @@ async function main() {
     console.log(`Run the gate before handoff: npm run verify -- ${name}`);
     return;
   }
-  if (edit && !fastPlan.all && fastPlan.dirty.size && readAddresses(name)) {
+  if (editUsable) {
     try {
       const outcome = await runEdit({ name, file, root, plan: fastPlan, cache, hashes, identity, a11y: auditsA11y });
       if (outcome.notes.length) console.log(`Changed since the last verified run:\n${outcome.notes.map((note) => `  ${note}`).join("\n")}`);
@@ -300,10 +311,12 @@ async function main() {
       console.log("Look at those images. Playback, flights, replay equality and 420px are gate-only: run the gate before handoff.");
       return;
     } catch (e) {
-      console.warn(`edit loop unavailable (${e.message}); running the full gate`);
+      failed = true;
+      console.error(`FAIL edit: ${e.message}`);
+      console.error(`The cache no longer matches the deck; run the full gate: npm run verify -- ${name}`);
+      return;
     }
   }
-  if (edit) console.log("edit loop: no usable cache (first run, shared source change or changed structure); running the full gate to establish it");
   if (cacheable) {
     console.log(`cached: ${fastPlan.reason} (${cachePath(name)})`);
     for (const pass of passes) {

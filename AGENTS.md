@@ -17,7 +17,7 @@ Explainer design guidance lives in [`skills/explainer-design/SKILL.md`](./skills
    `--checks` adds the a11y audit. `npm run verify -- <name> --edit` does the
    same for exactly the steps whose scene changed, writes them where the gate
    expects them, reports a pixel diff per moved step, ~0.5 s when nothing
-   changed and ~2-3 s after an edit. Both render by deep-link (cold seek), so
+   changed and ~2-4 s after an edit. Both render by deep-link (cold seek), so
    durable module-scope input state is at its initial value; playback, flights,
    replay equality and 420px belong to the gate. `npm run verify -- <name>
    --quick` is only a typecheck/build smoke test. Call the scripts with `node

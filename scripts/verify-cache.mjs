@@ -31,6 +31,12 @@ export function sourceHashes(name) {
   return Object.fromEntries(files.map((file) => [file, sha1(readFileSync(file))]));
 }
 
+/** One stamp for a deck's whole source set: what a build or cache was made from. */
+export function sourceStamp(name) {
+  const hashes = sourceHashes(name);
+  return sha1(JSON.stringify(Object.entries(hashes).sort(([a], [b]) => a.localeCompare(b))));
+}
+
 const IMPORT = /\bfrom\s*["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']\s*\)|^\s*import\s*["']([^"']+)["']/gm;
 
 function importsOf(file) {
