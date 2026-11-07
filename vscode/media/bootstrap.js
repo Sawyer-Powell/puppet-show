@@ -1,5 +1,8 @@
 import {mountDebugger} from '../../dist/webview/debugger.js';
 const vscode = acquireVsCodeApi();
+// Pane zoom from the puppet-show.paneScale setting; set through CSSOM because the CSP forbids inline styles.
+const app = document.getElementById('app');
+if (app?.dataset.scale) app.style.setProperty('--x-pane-zoom', app.dataset.scale);
 // Retention lives in the host. Persist only small session/notes metadata, never
 // a second full history or O(N) copy per scrub/capture.
 let saved = vscode.getState() ?? {};

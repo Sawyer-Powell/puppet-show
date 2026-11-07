@@ -58,6 +58,13 @@
           ],
           "default": "sidebar",
           "description": "Debugger pane location. Sidebar is pinned outside editor groups; editor opens beside and locks its group."
+        },
+        "puppet-show.paneScale": {
+          "type": "number",
+          "default": 1.25,
+          "minimum": 0.75,
+          "maximum": 3,
+          "description": "Zoom for the debugger pane's text and layout (1 = original size)."
         }
       }
     },

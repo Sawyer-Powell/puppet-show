@@ -1,44 +1,118 @@
 {
-  "version": 2,
-  "name": "How logical time keeps tweens exact",
-  "launch": {"name": "Debug puppet-show-explained", "url": "http://localhost:5173/puppet-show-explained/?autoplay=0.05&back=1"},
-  "maxStops": 10000,
-  "breakpoints": [
+ "version": 2,
+ "name": "How logical time keeps tweens exact",
+ "launch": {
+  "name": "Debug puppet-show-explained",
+  "url": "http://localhost:5173/puppet-show-explained/?autoplay=0.05&back=1"
+ },
+ "maxStops": 10000,
+ "breakpoints": [
+  {
+   "id": "frame",
+   "file": "src/core/thread.ts",
+   "match": "update(Math.max(0, (thread.runtime.now - start) / seconds));",
+   "condition": "!globalThis.__puppetShow?.snapshot().seeking",
+   "kind": "probe",
+   "label": "Progress drives the next signal value",
+   "note": "The clock advances on ragged browser frames. Progress selects the next signal value; the thread retains its exact operation boundary."
+  },
+  {
+   "id": "join",
+   "file": "src/core/thread.ts",
+   "match": "thread.time = Math.max(thread.time, ...threads.map((t) => t.time));",
+   "condition": "!globalThis.__puppetShow?.snapshot().seeking",
+   "kind": "probe",
+   "label": "Parent joins at the exact child end",
+   "note": "The parent takes the latest child end, not the clock that noticed completion. The logical series shows that exact join target."
+  },
+  {
+   "id": "seek",
+   "file": "src/core/player.ts",
+   "match": "frames++;",
+   "condition": "!onBeat && frames % 10 === 0",
+   "kind": "probe",
+   "label": "Replay reconstructs state with effects held",
+   "note": "Replay simulates ten frames between samples. The clock races forward while effects are held; the final signal state matches live playback."
+  }
+ ],
+ "collectors": [
+  "puppet-show",
+  {
+   "id": "clock",
+   "kind": "evaluate",
+   "expr": "typeof thread !== 'undefined' ? thread.runtime.now : this.runtime.now"
+  },
+  {
+   "id": "logical",
+   "kind": "evaluate",
+   "expr": "typeof threads !== 'undefined' ? Math.max(thread.time, ...threads.map(t => t.time)) : typeof thread !== 'undefined' ? thread.time : this.runtime.root.time"
+  },
+  {
+   "id": "progress",
+   "kind": "evaluate",
+   "expr": "typeof start !== 'undefined' && typeof seconds !== 'undefined' ? Math.min(1, Math.max(0, (thread.runtime.now - start) / seconds)) : null"
+  },
+  {
+   "id": "x",
+   "kind": "evaluate",
+   "expr": "(() => { const t = globalThis.document?.querySelector('.x-token small')?.textContent; return t ? Number(t.replace(/^x /, '')) : null; })()"
+  }
+ ],
+ "views": [
+  {
+   "id": "time",
+   "kind": "series",
+   "label": "clock vs exact boundary",
+   "lines": [
     {
-      "id": "frame", "file": "src/core/thread.ts",
-      "match": "update(Math.max(0, (thread.runtime.now - start) / seconds));",
-      "condition": "!globalThis.__puppetShow?.snapshot().seeking",
-      "kind": "probe", "label": "Progress drives the next signal value",
-      "note": "The clock advances on ragged browser frames. Progress selects the next signal value; the thread retains its exact operation boundary."
+     "select": "clock",
+     "label": "clock"
     },
     {
-      "id": "join", "file": "src/core/thread.ts",
-      "match": "thread.time = Math.max(thread.time, ...threads.map((t) => t.time));",
-      "condition": "!globalThis.__puppetShow?.snapshot().seeking",
-      "kind": "probe", "label": "Parent joins at the exact child end",
-      "note": "The parent takes the latest child end, not the clock that noticed completion. The logical series shows that exact join target."
-    },
-    {
-      "id": "seek", "file": "src/core/player.ts", "match": "frames++;",
-      "condition": "!onBeat && frames % 10 === 0",
-      "kind": "probe", "label": "Replay reconstructs state with effects held",
-      "note": "Replay simulates ten frames between samples. The clock races forward while effects are held; the final signal state matches live playback."
+     "select": "logical",
+     "label": "logical"
     }
-  ],
-  "collectors": [
-    "puppet-show",
-    {"id": "clock", "kind": "evaluate", "expr": "typeof thread !== 'undefined' ? thread.runtime.now : this.runtime.now"},
-    {"id": "logical", "kind": "evaluate", "expr": "typeof threads !== 'undefined' ? Math.max(thread.time, ...threads.map(t => t.time)) : typeof thread !== 'undefined' ? thread.time : this.runtime.root.time"},
-    {"id": "progress", "kind": "evaluate", "expr": "typeof start !== 'undefined' && typeof seconds !== 'undefined' ? Math.min(1, Math.max(0, (thread.runtime.now - start) / seconds)) : null"},
-    {"id": "x", "kind": "evaluate", "expr": "globalThis.__puppetShow?.snapshot().nodes.find(n => n.cls.includes('x-token'))?.motion?.x"}
-  ],
-  "views": [
-    {"id": "time", "kind": "series", "label": "clock vs exact boundary", "lines": [{"select": "clock", "label": "clock"}, {"select": "logical", "label": "logical"}]},
-    {"id": "x", "kind": "series", "select": "x", "label": "box.x", "breakpoint": "frame"},
-    {"id": "threads", "kind": "puppet-show:threads", "label": "threads against the clock"},
-    {"id": "nodes", "kind": "table", "select": "puppet-show.value.nodes", "key": "id", "columns": ["tag", "text", "motion.x", "motion.opacity"]},
-    {"id": "deck", "kind": "value", "select": ["puppet-show.value.deck.chapter", "puppet-show.value.deck.step", "puppet-show.value.deck.time", "progress"]}
-  ],
-  "redact": ["password", "/token/i", "secret"],
-  "notes": "Record first, then scrub: compare the state at two samples of the same probe. The pane never controls execution."
+   ]
+  },
+  {
+   "id": "x",
+   "kind": "series",
+   "select": "x",
+   "label": "box.x",
+   "breakpoint": "frame"
+  },
+  {
+   "id": "threads",
+   "kind": "puppet-show:threads",
+   "label": "threads against the clock"
+  },
+  {
+   "id": "nodes",
+   "kind": "table",
+   "select": "puppet-show.value.nodes",
+   "key": "id",
+   "columns": [
+    "tag",
+    "text",
+    "motion.x",
+    "motion.opacity"
+   ]
+  },
+  {
+   "id": "deck",
+   "kind": "value",
+   "select": [
+    "puppet-show.value.deck.chapter",
+    "puppet-show.value.deck.step",
+    "puppet-show.value.deck.time",
+    "progress"
+   ]
+  }
+ ],
+ "redact": [
+  "password",
+  "/token/i",
+  "secret"
+ ],
+ "notes": "Record first, then scrub: compare the state at two samples of the same probe. The pane never controls execution."
 }

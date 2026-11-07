@@ -1,7 +1,7 @@
 @import "../../ui/puppet-show.css";
 html:has(> body > .x-state-debugger), body:has(> .x-state-debugger),
 html:has(> body > #app > .x-state-debugger), body:has(> #app > .x-state-debugger) { margin: 0; background: var(--ps-bg); }
-.x-state-debugger { box-sizing: border-box; width: 100%; min-width: 0; padding: 8px; background: var(--ps-bg); color: var(--ps-text); font: var(--ps-size-s)/1.45 var(--ps-font); }
+.x-state-debugger { zoom: var(--x-pane-zoom, 1); box-sizing: border-box; width: 100%; min-width: 0; padding: 8px; background: var(--ps-bg); color: var(--ps-text); font: var(--ps-size-s)/1.45 var(--ps-font); }
 .x-state-debugger:focus-visible { outline: 1px solid var(--ps-accent); outline-offset: -1px; }
 .x-state-debugger *, .x-state-debugger *::before, .x-state-debugger *::after { box-sizing: inherit; }
 .x-state-header { display: flex; align-items: center; gap: 7px; height: 22px; white-space: nowrap; min-width: 0; }

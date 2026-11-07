@@ -3,6 +3,12 @@ import {randomBytes} from 'node:crypto';
 import {PostBatcher} from './batch.ts';
 import type {ToHost, ToView} from './protocol.ts';
 
+/** User zoom for the pane (setting puppet-show.paneScale), clamped to a sane range. */
+const paneScale = (): number => {
+  const v = vscode.workspace.getConfiguration('puppet-show').get<number>('paneScale', 1.25);
+  return Number.isFinite(v) ? Math.min(3, Math.max(0.75, v)) : 1.25;
+};
+
 /** Secondary side bar, supported by the installed 1.132 contribution schema. */
 export class DebuggerPane implements vscode.Disposable {
   private view?: vscode.WebviewView;
@@ -30,7 +36,7 @@ export class DebuggerPane implements vscode.Disposable {
     webview.options = {enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(root, 'dist/webview'), vscode.Uri.joinPath(this.context.extensionUri, 'media')]};
     const nonce = randomBytes(18).toString('base64');
     const uri = (path: string) => webview.asWebviewUri(vscode.Uri.joinPath(root, path)).toString();
-    webview.html = `<!doctype html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}' 'strict-dynamic'; style-src ${webview.cspSource}; font-src ${webview.cspSource} data:;"><link rel="stylesheet" href="${uri('dist/webview/debugger.css')}"></head><body><main id="app"></main><script nonce="${nonce}" type="module" src="${uri('vscode/media/bootstrap.js')}"></script></body></html>`;
+    webview.html = `<!doctype html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}' 'strict-dynamic'; style-src ${webview.cspSource}; font-src ${webview.cspSource} data:;"><link rel="stylesheet" href="${uri('dist/webview/debugger.css')}"></head><body><main id="app" data-scale="${paneScale()}"></main><script nonce="${nonce}" type="module" src="${uri('vscode/media/bootstrap.js')}"></script></body></html>`;
     webview.onDidReceiveMessage((message: ToHost | {type: 'receipt'; index: number; series: number; stop: number}) => {
       if (!message || typeof message !== 'object') return;
       if (message.type === 'ready') {

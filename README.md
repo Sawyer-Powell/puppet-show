@@ -21,6 +21,9 @@ npm run build puppet-show-explained
 open dist/examples/puppet-show-explained/index.html
 ```
 
+Also here: an [experimental VS Code debugger](#experimental-vs-code-debugger)
+that records and scrubs an explainer's state.
+
 Generator-driven, signal-based animation for interactive explainers in the DOM.
 It borrows Motion Canvas semantics (scenes are generators, properties are
 signals, `yield*` sequences time) and adds click-through steps, seeking by
@@ -59,12 +62,28 @@ The one example, `examples/puppet-show-explained`, explains puppet-show itself:
 scenes as generators, `yield` vs `yield*`, logical time, and seeking by replay.
 `recipes/gallery` is the component catalogue with copyable recipes.
 
-Full signatures: [`docs/API.md`](./docs/API.md). Recipes: `recipes/gallery/`.
-VS Code debugger (experimental): `vscode/` is an extension that records
-program state at agent-placed probes and renders it in a pinned pane; see
-[`docs/debugger/AGENT.md`](./docs/debugger/AGENT.md). Build with
-`npm run build:extension`; drive sessions with `npm run session -- start|status|stop`.
+## Experimental: VS Code debugger
 
+![The puppet-show debugger pane beside a paused breakpoint in VS Code](docs/images/vscode-debugger.png)
+
+`vscode/` is an experimental VS Code extension for understanding *program
+state*, not debugger mechanics. An agent (or you) writes a session file of
+probes and collectors; the extension records state at each probe while the
+explainer runs and renders it in a pinned pane: a scrubber over every stop,
+what changed, and declared views such as "clock vs exact boundary". VS Code
+keeps its own source view and controls. Sessions are plain files plus a URI
+handler; there is no network listener.
+
+```sh
+npm run build:extension
+code --extensionDevelopmentPath="$PWD/vscode" .
+npm run session -- start docs/debugger/logical-time.puppet-show-session.json
+```
+
+Details: [`docs/debugger/AGENT.md`](./docs/debugger/AGENT.md). Pane size:
+setting `puppet-show.paneScale`.
+
+Full signatures: [`docs/API.md`](./docs/API.md). Recipes: `recipes/gallery/`.
 Agents: start with [`AGENTS.md`](./AGENTS.md). Explainer design guidance:
 [`skills/explainer-design/SKILL.md`](./skills/explainer-design/SKILL.md).
 The runtime provides composable capabilities; the skill discusses how to use them.

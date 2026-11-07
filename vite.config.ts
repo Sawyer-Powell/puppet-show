@@ -14,7 +14,16 @@ const root = dir.split("/")[0];
 
 export default defineConfig({
   root,
-  plugins: [viteSingleFile({ removeViteModuleLoader: true })],
+  plugins: [
+    // Dev server only: install the state inspector (window.__puppetShow) that the
+    // VS Code debugger's collectors read. Production builds never include it.
+    { name: "puppet-show-dev-inspector", apply: "serve", transform(src, id) {
+      if (/\/(examples|recipes)\/[^/]+\/main\.ts$/.test(id)) {
+        return `import "/@fs/${resolve(import.meta.dirname, "src/inspect/dev.ts")}";\n${src}`;
+      }
+    } },
+    viteSingleFile({ removeViteModuleLoader: true }),
+  ],
   build: {
     outDir: resolve(import.meta.dirname, "dist/examples"),
     emptyOutDir: false,
