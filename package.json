@@ -15,6 +15,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test --experimental-strip-types test/*.test.ts test/*.test.mjs",
     "verify": "node scripts/verify.mjs",
+    "scenes": "node scripts/scenes.mjs",
+    "shot": "node scripts/shot.mjs",
     "lint:design": "node scripts/lint-design.mjs",
     "check:api": "node scripts/check-api-docs.mjs",
     "check": "node scripts/lint-design.mjs && node scripts/check-api-docs.mjs && tsc --noEmit && node --test --experimental-strip-types test/*.test.ts test/*.test.mjs",

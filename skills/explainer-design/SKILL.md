@@ -113,9 +113,11 @@ named. Anything used before it is introduced is a defect: reorder, introduce it
 concretely, or cut it. Read the first screen as a newcomer would: it must make
 sense with no prior knowledge of the system.
 
-1. Full `npm run verify -- <name>` is the technical gate and takes ~10-15s, so
-   run it per iteration; `--quick` (typecheck + build, ~1s) is only for
-   catching typos between visual passes.
+1. Iterate on one step: `npm run scenes -- <name>` lists step addresses and
+   `npm run shot -- <name> <address>` renders that step to a full-size PNG with
+   the settled checks in ~1-2s; look at the PNG, fix, re-shoot. Full
+   `npm run verify -- <name>` (~10-15s) is the technical gate before handoff;
+   `--quick` (typecheck + build, ~1s) only catches typos between visual passes.
 2. Open the generated 720px, 420px and motion sheets. Compare adjacent states;
    inspect uncertain frames at full size and play critical transitions live.
    Exercise alternate input states, keyboard navigation and replay too.

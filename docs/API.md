@@ -609,7 +609,16 @@ by item key, e.g. `const local = new Map([["B", signal(0)]]);` outside the scene
 Bind those signals in the item's render function; never rely on uncontrolled DOM
 state to survive navigation.
 
-**Verify cannot judge meaning.** Contact-sheet review is mandatory: look for
+**Iterate on one step.** A deck's hash addresses a step (`#chapter/step`, or
+`#chapter/beat-name` for a named `beat`), and loading that hash seeks straight
+there. `npm run scenes -- <name>` lists the addresses and
+`npm run shot -- <name> <address> [--width 720]` renders exactly that step to a
+PNG with the same settled checks the gate runs (~1 s, no deck walk). A shot is a
+cold seek: durable module-scope input state (sliders, answers) sits at its
+initial value, unlike the gate, which walks the deck. Address caches live in
+`shots/<name>/addresses.json` and are invalidated by any rebuild.
+
+**Verify cannot judge meaning.** Image review is mandatory: look for
 blank lanes, arrows reaching the wrong place, values that did not visibly change,
 clipped text, overflow and layout jumps. `--quick` is only an inner loop;
 full `npm run verify -- <name>` is the gate. Console errors and `puppet-show:` warnings

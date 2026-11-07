@@ -11,8 +11,14 @@ Explainer design guidance lives in [`skills/explainer-design/SKILL.md`](./skills
    `main.ts`, `style.css`, `scenes/NN-topic.ts`. Examples are discovered by
    folder; no config edits needed. `recipes/gallery/` is the component
    catalogue (build/verify it by name like an example).
-2. Inner loop: `npm run verify -- <name> --quick` runs only the scoped
-   typecheck and build in seconds, stopping on the first failure.
+2. Inner loop, one step at a time: `npm run scenes -- <name>` lists step
+   addresses (`chapter/step` or `chapter/beat`), then `npm run shot -- <name>
+   <address>` renders that single step to `shots/<name>/shot/….png` and prints
+   the same settled issues the gate reports, in about a second. Fix, re-shoot,
+   look at the PNG. The shot deep-links (cold seek), so durable module-scope
+   input state is at its initial value — the gate walks the deck, so it stays
+   authoritative. `npm run verify -- <name> --quick` is only a
+   typecheck/build smoke test.
    Gate: `npm run verify -- <name>` (note the `--`: npm swallows flags without it).
    A full gate takes ~10-15 s because the 720 and 420 passes run concurrently
    and live playback runs on a fake clock (`--realtime` replays in wall time
@@ -37,7 +43,8 @@ Explainer design guidance lives in [`skills/explainer-design/SKILL.md`](./skills
    `npm run check` also gates design literals/token sync and public-export docs.
    Justified static-lint exceptions require `/* lint-design: allow <reason> */`
    on the offending line; do not use exceptions to hide missing semantic tokens.
-3. Open the contact sheets it lists and look at them. Fix page errors, clipped
+3. Open the images it lists and look at them: the shot PNG while iterating, the
+   contact sheets before handing off. Fix page errors, clipped
    text, layout jumps and replay mismatches before handing off. Verify cannot
    judge meaning: also check for blank lanes, arrows reaching the wrong place,
    and values that did not visibly change. Console errors and `puppet-show:` warnings fail.
