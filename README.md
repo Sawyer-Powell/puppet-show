@@ -1,5 +1,18 @@
 # puppet-show
 
+[![puppet-show explaining itself: step 6 of 19, "a scene is a script"](docs/images/puppet-show-explained.png)](examples/puppet-show-explained)
+
+**Start here: [`examples/puppet-show-explained`](examples/puppet-show-explained)** is a
+19-step interactive explainer of puppet-show, built with puppet-show. It
+introduces signals, tweens, scenes, `yield*`, the player and replay in order,
+with a prediction question once you have the pieces. Build and open it:
+
+```sh
+npm install
+npm run build puppet-show-explained
+open dist/examples/puppet-show-explained/index.html
+```
+
 Generator-driven, signal-based animation for interactive explainers in the DOM.
 It borrows Motion Canvas semantics (scenes are generators, properties are
 signals, `yield*` sequences time) and adds click-through steps, seeking by
