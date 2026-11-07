@@ -5,10 +5,11 @@
 // therefore re-verify that scene's steps only, not the whole deck.
 //
 // Invalidation unit: the scene file behind a chapter, widened to every scene
-// that transitively imports a changed file. A change outside every scene's
-// import closure (shared `src/`, CSS, `main.ts`, `index.html`) invalidates the
-// whole deck. Unparseable structure also invalidates everything: slower, never
-// wrong.
+// that transitively imports a changed file, plus the first step of the chapter
+// that follows a changed one (that is where the leaving flight is observed).
+// A change outside every scene's import closure (shared `src/`, CSS, `main.ts`,
+// `index.html`) invalidates the whole deck. Unparseable structure also
+// invalidates everything: slower, never wrong.
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -116,6 +117,13 @@ export function invalidation({ name, chapters, previous, hashes, identity, scene
   chapters.forEach((id, index) => {
     if (touched.has(scenes[ids.indexOf(id)])) dirty.add(index);
   });
+  // A flight that leaves a changed chapter is observed while the next
+  // chapter's first step plays, so that landing step must be re-checked even
+  // though its own scene is untouched. One step only, no cascade: the flight
+  // out of an unchanged chapter depends on unchanged settled states.
+  for (const index of [...dirty]) {
+    if (index + 1 < chapters.length && chapters[index + 1] !== chapters[index]) dirty.add(index + 1);
+  }
   return { all: false, dirty, reason: `${touched.size} scene(s) changed` };
 }
 

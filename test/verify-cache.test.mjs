@@ -58,9 +58,11 @@ test("chapter scenes are read from the main.ts template in deck order", () => {
 test("a scene edit re-verifies only that scene's steps", () => {
   const result = plan(cacheFor(), { "scenes/shared.ts": "changed" });
   assert.equal(result.all, false);
-  assert.deepEqual([...result.dirty], [0, 1], "chapter one's steps only");
-  assert.equal(plan(cacheFor(), { "scenes/a.ts": "changed" }).dirty.size, 2);
-  assert.equal(plan(cacheFor(), { "scenes/b.ts": "changed" }).dirty.size, 1);
+  // Chapter one's steps, plus chapter two's first step: the flight leaving the
+  // changed chapter is observed while that step plays.
+  assert.deepEqual([...result.dirty], [0, 1, 2]);
+  assert.deepEqual([...plan(cacheFor(), { "scenes/a.ts": "changed" }).dirty], [0, 1, 2]);
+  assert.deepEqual([...plan(cacheFor(), { "scenes/b.ts": "changed" }).dirty], [2], "a last chapter needs no landing step");
 });
 
 test("edits outside every scene closure, or unknown state, invalidate the deck", () => {
