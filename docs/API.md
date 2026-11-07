@@ -618,6 +618,13 @@ cold seek: durable module-scope input state (sliders, answers) sits at its
 initial value, unlike the gate, which walks the deck. Address caches live in
 `shots/<name>/addresses.json` and are invalidated by any rebuild.
 
+**The edit loop renders, the gate proves.** `npm run shot -- <name> <chapter>`
+renders a scene's steps from cold seeks in about a second; `verify --edit` does
+the same for the steps whose scene changed, at 720px, and records the results
+for the gate. Neither walks the deck or plays it back, so playback, flight
+geometry, replay equality and the 420px pass remain gate-only; the shot loop
+skips a11y unless `--checks`, while `verify --edit` always audits it. Iterate with those two; hand off with the gate.
+
 **Verification is incremental.** Per-step results (signature, issues, tall
 stage, mid-motion sample) are cached in `shots/<name>/verify-cache.json` against
 content hashes of the files each step's scene depends on, plus the Node/Chrome

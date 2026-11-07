@@ -13,13 +13,21 @@ export function inspectA11y() {
     }
     return true;
   };
+  // Computed colours normally serialize to rgb()/rgba(); canvas normalizes
+  // modern colour syntax as well, without fetching any resources. Parsing each
+  // distinct colour once matters: a deck audits the same few colours hundreds
+  // of times through the ancestor chain, and a canvas round-trip each time made
+  // this the most expensive check in the suite.
+  const colourCache = new Map();
   const rgba = v => {
-    // Computed colours normally serialize to rgb()/rgba(); canvas normalizes
-    // modern colour syntax as well, without fetching any resources.
+    const cached = colourCache.get(v);
+    if (cached) return cached;
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
     const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = v; ctx.fillRect(0, 0, 1, 1);
     const d = ctx.getImageData(0, 0, 1, 1).data;
-    return [d[0] / 255, d[1] / 255, d[2] / 255, d[3] / 255];
+    const parsed = [d[0] / 255, d[1] / 255, d[2] / 255, d[3] / 255];
+    colourCache.set(v, parsed);
+    return parsed;
   };
   const over = (a, b) => {
     const alpha = a[3] + b[3] * (1 - a[3]);

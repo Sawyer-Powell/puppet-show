@@ -56,9 +56,10 @@ deck(document.body, { path: "puppet-show://demo", chapters: [{ title: "intro", s
 | `npm test` | runtime semantics (node, no browser) |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run scenes -- <name>` | list step addresses (`chapter/step`, `chapter/beat`) for one-step iteration |
-| `npm run shot -- <name> <address>` | render one step: PNG + settled issues in ~1s (deep link, no deck walk) |
+| `npm run shot -- <name> <address...>` | render one step (~0.6s) or a whole chapter (~1s) to full-size PNGs; `--checks` adds a11y |
+| `npm run verify -- <name> --edit` | re-render only changed steps at 720px with a pixel diff: ~0.5s unchanged, ~2-3s after an edit |
 | `npm run verify -- <name> --quick` | scoped typecheck + build only, fail fast |
-| `npm run verify -- <name>` | typecheck + build + screenshots at 720/420 + live motion pass + replay check + contact sheets (cold ~13-16s; unchanged deck ~0.5s from the per-step cache) |
+| `npm run verify -- <name>` | typecheck + build + screenshots at 720/420 + live motion pass + replay check + contact sheets (cold ~5s; unchanged deck ~0.5s from the per-step cache) |
 | `npm run verify -- <name> --refresh` | same gate, ignoring cached per-step results |
 | `npm run verify -- <name> --realtime` | same checks, real-time playback (timing debugging; slower) |
 

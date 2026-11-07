@@ -7,22 +7,23 @@
 // browser and a one-scene edit re-verifies only that scene's steps.
 import { execFileSync } from "node:child_process";
 import { sourceDir } from "./sources.mjs";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { chrome, endpoints, imageName, motion, sheet, viewportHeight } from "./verify-browser.mjs";
 import { rejectSwallowedFlags } from "./verify-cli.mjs";
 import { CACHE_VERSION, cachePath, invalidation, loadCache, sourceHashes, reusable } from "./verify-cache.mjs";
-import { distFile, ensureBuilt, loadInventory } from "./frames.mjs";
+import { readAddresses, ensureBuilt, loadInventory, shoot } from "./frames.mjs";
 import { diffPngs } from "./pixels.mjs";
 
 const defaultChrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 function argumentsFor(args) {
-  let name, widths = [720, 420], seenWidth = false, quick = false, a11y = true, realtime = false, refresh = false;
+  let name, widths = [720, 420], seenWidth = false, quick = false, a11y = true, realtime = false, refresh = false, edit = false;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--quick" && !quick) quick = true;
     else if (args[i] === "--realtime" && !realtime) realtime = true;
     else if (args[i] === "--refresh" && !refresh) refresh = true;
+    else if (args[i] === "--edit" && !edit) edit = true;
     else if (args[i] === "--no-a11y" && a11y) a11y = false;
     else if (args[i] === "--width" && !seenWidth) {
       seenWidth = true;
@@ -31,10 +32,11 @@ function argumentsFor(args) {
       widths = [...new Set(value.split(",").map(Number))];
       if (widths.some((w) => w < 200 || w > 4000)) throw new Error("widths must be between 200 and 4000");
     } else if (!name && /^[a-zA-Z][\w-]*$/.test(args[i])) name = args[i];
-    else throw new Error(`unknown argument ${JSON.stringify(args[i])}; use npm run verify -- <name> [--quick] [--width 720,420] [--no-a11y] [--realtime] [--refresh] (npm may swallow flags without --)`);
+    else throw new Error(`unknown argument ${JSON.stringify(args[i])}; use npm run verify -- <name> [--edit] [--quick] [--width 720,420] [--no-a11y] [--realtime] [--refresh] (npm may swallow flags without --)`);
   }
-  if (!name || !sourceDir(name)) throw new Error("usage: npm run verify -- <example> [--quick] [--width 720,420] [--no-a11y] [--realtime] [--refresh]; example must exist in examples/ or recipes/");
-  return { name, widths, quick, a11y, realtime, refresh };
+  if (!name || !sourceDir(name)) throw new Error("usage: npm run verify -- <example> [--edit] [--quick] [--width 720,420] [--no-a11y] [--realtime] [--refresh]; example must exist in examples/ or recipes/");
+  if (edit) widths = [720];
+  return { name, widths, quick, a11y, realtime, refresh, edit };
 }
 
 let failed = false;
@@ -137,19 +139,78 @@ function dirtyChapters(inventory, captured) {
   return [...chapters.values()].filter((entry) => entry.dirty);
 }
 
+/**
+ * Edit loop: re-render only the steps whose scene changed, straight from the
+ * deck's step addresses (a cold seek), with the same settled checks as the
+ * gate. No deck walk, no sheets, one width. The gate (walk, playback, flights,
+ * 420px) stays authoritative before handoff; this exists so an edit costs
+ * seconds, not a deck.
+ */
+async function runEdit({ name, file, root, plan, cache, hashes, identity, a11y }) {
+  const start = Date.now();
+  const addresses = readAddresses(name);
+  const indexes = [...plan.dirty].sort((a, b) => a - b);
+  const browser = await chrome();
+  const entries = {}, notes = [], artifacts = [];
+  try {
+    for (const index of indexes) {
+      const step = addresses.steps[index];
+      if (!step) throw new Error(`step ${index + 1} is not in the cached address list; the deck's structure changed — run the full gate`);
+      const out = resolve(root, "720", imageName(index));
+      const before = existsSync(out) ? readFileSync(out).toString("base64") : null;
+      const shot = await shoot(browser, { name, file, inventory: addresses, address: step.address, width: 720, out, checks: a11y });
+      const issues = shot.issues.map((issue) => `step ${index + 1}: ${issue}`);
+      report(`step ${index + 1} (${step.address})`, [...shot.errors, ...issues]);
+      // A step with page/console errors stays uncached so the next run retries it.
+      if (!shot.errors.length) entries[index] = { signature: shot.signature, issues, tallStage: shot.tallStage ?? null };
+      artifacts.push(out);
+      if (before) {
+        try {
+          const diff = await diffPngs(browser, { before, after: readFileSync(out).toString("base64") });
+          if (diff.bbox && !diff.resized && diff.pct >= 0.0005) {
+            const destination = resolve(root, "diff", `720-${imageName(index)}`);
+            mkdirSync(resolve(root, "diff"), { recursive: true });
+            writeFileSync(destination, Buffer.from(diff.png.split(",")[1], "base64"));
+            notes.push(`step ${index + 1} changed ${(diff.pct * 100).toFixed(1)}% at ${diff.bbox.x},${diff.bbox.y} ${diff.bbox.width}×${diff.bbox.height} · ${destination}`);
+          }
+        } catch (e) { notes.push(`step ${index + 1} diff unavailable: ${e.message}`); }
+      }
+    }
+  } finally { await browser.close(); }
+
+  // Fold the fresh endpoint results in; every other pass must re-verify the
+  // steps the gate walks (playback, 420px) rather than inherit them.
+  const steps = { ...cache.steps };
+  for (const [key, pass] of Object.entries(steps)) {
+    if (key === "720") continue;
+    steps[key] = Object.fromEntries(Object.entries(pass).filter(([index]) => !entries[index]));
+  }
+  steps["720"] = { ...steps["720"], ...entries };
+  mkdirSync(root, { recursive: true });
+  writeFileSync(cachePath(name), JSON.stringify({
+    version: CACHE_VERSION, identity, files: hashes, total: cache.total, chapters: cache.chapters, steps,
+  }, null, 2));
+  return { entries, notes, artifacts, seconds: (Date.now() - start) / 1000 };
+}
+
 async function main() {
   rejectSwallowedFlags();
-  const { name, widths, quick, a11y, realtime, refresh } = argumentsFor(process.argv.slice(2));
+  const { name, widths, quick, a11y, realtime, refresh, edit } = argumentsFor(process.argv.slice(2));
   if (!a11y) console.warn("DEBUG ONLY: --no-a11y skips accessibility/keyboard gates; not valid for handoff.");
+  // The edit loop always audits a11y: it writes the entries the gate reuses, and
+  // the flag is part of the cache identity. Use `shot` for a layout-only check.
+  const auditsA11y = edit ? true : a11y;
   const start = Date.now();
-  console.log(`verify ${name}: ${quick ? "quick (scoped typecheck + build only)" : `endpoint widths ${widths.join(", ")}px; motion ${[...new Set([720, ...widths])].join(", ")}px; viewport height ${viewportHeight}px`}`);
-  mkdirSync("node_modules/.cache/puppet-show", { recursive: true });
-  const temp = mkdtempSync(resolve("node_modules/.cache/puppet-show/verify-"));
-  const config = resolve(temp, "tsconfig.json");
-  writeFileSync(config, JSON.stringify({ extends: resolve("tsconfig.json"), include: [resolve("src"), resolve(sourceDir(name))], exclude: [] }, null, 2));
-  try {
-    if (!gate("scoped typecheck", "npx", ["tsc", "--noEmit", "-p", config])) return;
-  } finally { rmSync(temp, { recursive: true, force: true }); }
+  console.log(`verify ${name}: ${quick ? "quick (scoped typecheck + build only)" : edit ? `edit loop (720px, changed steps only; run without --edit before handoff)` : `endpoint widths ${widths.join(", ")}px; motion ${[...new Set([720, ...widths])].join(", ")}px; viewport height ${viewportHeight}px`}`);
+  // Stable config + build info: tsc then only rechecks changed files (~0.3s).
+  const cacheDir = resolve("node_modules/.cache/puppet-show", name);
+  mkdirSync(cacheDir, { recursive: true });
+  const config = resolve(cacheDir, "tsconfig.json");
+  writeFileSync(config, JSON.stringify({
+    extends: resolve("tsconfig.json"), include: [resolve("src"), resolve(sourceDir(name))], exclude: [],
+    compilerOptions: { incremental: true, tsBuildInfoFile: resolve(cacheDir, "tsconfig.tsbuildinfo") },
+  }, null, 2));
+  if (!gate("scoped typecheck", "npx", ["tsc", "--noEmit", "-p", config])) return;
 
   // Build only when the deck is stale: a rebuild renumbers nothing but does
   // invalidate the address cache, which would force a fresh indexing walk.
@@ -162,7 +223,7 @@ async function main() {
 
   const file = built.file, root = resolve(`shots/${name}`);
   mkdirSync(root, { recursive: true });
-  const identity = environment(a11y);
+  const identity = environment(auditsA11y);
   const hashes = sourceHashes(name);
   const cache = refresh ? null : loadCache(name);
   const keys = passKeys(widths, realtime);
@@ -217,6 +278,32 @@ async function main() {
     }, null, 2));
   };
 
+  // The edit loop only needs the 720px endpoint entries; missing playback/420px
+  // entries belong to the gate and must not force work here.
+  if (edit && !fastPlan.all && fastPlan.dirty.size === 0) {
+    console.log(`PASS edit: no changes (${cache.total} steps cached)`);
+    console.log(`Run the gate before handoff: npm run verify -- ${name}`);
+    return;
+  }
+  if (edit && !fastPlan.all && fastPlan.dirty.size && readAddresses(name)) {
+    try {
+      const outcome = await runEdit({ name, file, root, plan: fastPlan, cache, hashes, identity, a11y: auditsA11y });
+      if (outcome.notes.length) console.log(`Changed since the last verified run:\n${outcome.notes.map((note) => `  ${note}`).join("\n")}`);
+      writeFileSync(resolve(root, "results.json"), JSON.stringify({
+        name, widths: [720], a11y, failed, seconds: (Date.now() - start) / 1000,
+        edit: { reason: fastPlan.reason, rendered: [...fastPlan.dirty], notes: outcome.notes },
+      }, null, 2));
+      const rendered = Object.keys(outcome.entries).length;
+      const seconds = (Date.now() - start) / 1000;
+      console.log(`${failed ? "FAIL" : "PASS"} edit ${name} (${seconds.toFixed(2)}s): ${rendered}/${cache.total} steps re-verified, ${fastPlan.reason}`);
+      console.log(`png ${outcome.artifacts.join("\n    ")}`);
+      console.log("Look at those images. Playback, flights, replay equality and 420px are gate-only: run the gate before handoff.");
+      return;
+    } catch (e) {
+      console.warn(`edit loop unavailable (${e.message}); running the full gate`);
+    }
+  }
+  if (edit) console.log("edit loop: no usable cache (first run, shared source change or changed structure); running the full gate to establish it");
   if (cacheable) {
     console.log(`cached: ${fastPlan.reason} (${cachePath(name)})`);
     for (const pass of passes) {
@@ -264,7 +351,7 @@ async function main() {
         }
         const options = { file, out: pass.out, width: pass.width, reuse };
         const job = pass.kind === "endpoints"
-          ? endpoints(browser, { ...options, a11y: a11y && pass.width === 720 })
+          ? endpoints(browser, { ...options, a11y: auditsA11y && pass.width === 720 })
           : motion(browser, { ...options, clock: !realtime });
         return { pass, job: job.then((result) => ({ result }), (error) => ({ error })) };
       });

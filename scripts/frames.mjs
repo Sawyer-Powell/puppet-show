@@ -10,6 +10,7 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { sourceDir } from "./sources.mjs";
 import { inspectA11y, keyboardIssues } from "./verify-a11y.mjs";
+import { stageSize } from "./verify-visibility.mjs";
 import { advance, diagnostic, layoutIssues, openDeck, paused, signature, viewportHeight, waitForDeck } from "./verify-browser.mjs";
 
 export const distFile = (name) => `dist/examples/${name}/index.html`;
@@ -68,6 +69,16 @@ export function readCachedInventory(name, file) {
     const cached = JSON.parse(readFileSync(addressCache(name), "utf8"));
     return cached.build === buildStamp(file) ? cached.inventory : null;
   } catch { return null; }
+}
+
+/**
+ * Addresses regardless of the build stamp: the edit loop cannot afford the
+ * indexing walk after every rebuild. `shoot` verifies the deck really opened the
+ * addressed step, so a structure change surfaces as a clear error instead of a
+ * wrong picture.
+ */
+export function readAddresses(name) {
+  try { return JSON.parse(readFileSync(addressCache(name), "utf8")).inventory ?? null; } catch { return null; }
 }
 
 export async function loadInventory(browser, { name, file, refresh = false }) {
@@ -130,13 +141,28 @@ export function shotPath(name, step, width) {
 }
 
 /**
+ * Every step an address covers: a step address renders one step, a bare chapter
+ * renders the whole scene, which is the unit an author edits.
+ */
+export function resolveTargets(inventory, address) {
+  const text = String(address ?? "").trim();
+  const isChapter = !/^\d+$/.test(text) && !text.includes("/") && inventory.steps.some((step) => step.chapter === text);
+  if (!isChapter) return [resolveAddress(inventory, address)];
+  return inventory.steps.filter((step) => step.chapter === text);
+}
+
+/**
  * Render one step at one width. Deep-linking seeks straight to the step, so
  * nothing before it is played. This is a cold seek, not a walk: durable
  * module-scope input state (sliders, answers) is at its initial value here,
  * while `verify` walks the deck. Use it for layout/visual iteration; the gate
  * remains authoritative.
+ *
+ * `checks: true` adds the a11y + keyboard audit. Default is the cheap visual
+ * check (layout, spill, clipping, console errors): iteration wants pixels, and
+ * the gate audits accessibility anyway.
  */
-export async function shoot(browser, { name, file, inventory, address, width = 720, out }) {
+export async function shoot(browser, { name, file, inventory, address, width = 720, out, checks = false }) {
   const target = resolveAddress(inventory, address);
   const errors = [];
   const page = await browser.newPage({ viewport: { width, height: viewportHeight }, deviceScaleFactor: 1, reducedMotion: "reduce" });
@@ -153,16 +179,18 @@ export async function shoot(browser, { name, file, inventory, address, width = 7
     const index = Number(await page.locator(".ps-deck").getAttribute("data-index"));
     if (index + 1 !== target.index) throw new Error(`address ${target.address} says step ${target.index}, but the deck opened step ${index + 1}; the address cache is stale (rerun without --no-build)`);
     await paused(page, index);
-    const issues = [...await page.evaluate(inspectA11y), ...await layoutIssues(page)];
-    if (target.index === 1) {
+    const issues = await layoutIssues(page);
+    if (checks) issues.push(...await page.evaluate(inspectA11y));
+    if (checks && target.index === 1) {
       issues.push(...await keyboardIssues(page));
       // Tab reachability can scroll to the footer; capture the top of the step.
       await page.evaluate(() => scrollTo(0, 0));
     }
+    const tallStage = await page.evaluate(stageSize);
     const digest = await signature(page);
     mkdirSync(dirname(destination), { recursive: true });
     await page.screenshot({ path: destination, fullPage: true });
-    return { target, width, png: destination, signature: digest, issues: [...errors, ...issues] };
+    return { target, width, png: destination, signature: digest, tallStage, issues, errors };
   } catch (e) { throw await diagnostic(page, e); }
   finally { await page.close(); }
 }

@@ -11,22 +11,25 @@ Explainer design guidance lives in [`skills/explainer-design/SKILL.md`](./skills
    `main.ts`, `style.css`, `scenes/NN-topic.ts`. Examples are discovered by
    folder; no config edits needed. `recipes/gallery/` is the component
    catalogue (build/verify it by name like an example).
-2. Inner loop, one step at a time: `npm run scenes -- <name>` lists step
-   addresses (`chapter/step` or `chapter/beat`), then `npm run shot -- <name>
-   <address>` renders that single step to `shots/<name>/shot/….png` and prints
-   the same settled issues the gate reports, in about a second. Fix, re-shoot,
-   look at the PNG. The shot deep-links (cold seek), so durable module-scope
-   input state is at its initial value — the gate walks the deck, so it stays
-   authoritative. `npm run verify -- <name> --quick` is only a
-   typecheck/build smoke test.
+2. Inner loop by scene. `npm run scenes -- <name>` lists step addresses;
+   `npm run shot -- <name> <chapter>` renders every step of that scene to
+   full-size PNGs in ~1 s (one step ~0.6 s) with the cheap settled checks, and
+   `--checks` adds the a11y audit. `npm run verify -- <name> --edit` does the
+   same for exactly the steps whose scene changed, writes them where the gate
+   expects them, reports a pixel diff per moved step, ~0.5 s when nothing
+   changed and ~2-3 s after an edit. Both render by deep-link (cold seek), so
+   durable module-scope input state is at its initial value; playback, flights,
+   replay equality and 420px belong to the gate. `npm run verify -- <name>
+   --quick` is only a typecheck/build smoke test. Call the scripts with `node
+   scripts/shot.mjs` when even npm's ~0.2 s start-up matters.
    Gate: `npm run verify -- <name>` (note the `--`: npm swallows flags without it).
-   A cold gate takes ~13-16 s because the 720 and 420 passes run concurrently
+   A cold gate takes ~5 s because the 720 and 420 passes run concurrently
    and live playback runs on a fake clock (`--realtime` replays in wall time
    for timing debugging; the checks are identical). Results are cached per step
    against content hashes of the sources each step depends on
    (`shots/<name>/verify-cache.json`), so an unchanged deck re-gates in ~0.5 s
    without a browser and a one-scene edit re-verifies only that scene's steps
-   (~5-7 s). Every re-captured step is printed under "Changed since the last
+   (~4-7 s). Every re-captured step is printed under "Changed since the last
    verified run" with a percentage, a bounding box and a red-marked diff crop
    in `shots/<name>/diff/`. `--refresh` ignores the cache; edited shared sources
    (`src/`, CSS, `main.ts`) still invalidate the whole deck.
