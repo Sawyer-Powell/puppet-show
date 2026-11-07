@@ -636,7 +636,9 @@ one-scene edit re-verifies that scene's steps only; edits to `src/`, CSS,
 results only for byte-identical inputs, so it cannot launder a regression —
 `--refresh` forces a cold run. Re-captured steps are reported with a change
 percentage, a bounding box and a red-marked diff crop under
-`shots/<name>/diff/`.
+`shots/<name>/diff/`. Edit-mode baselines live in `shots/<name>/edit/` and are
+reset whenever the deck's step structure changes, so chrome like `1/8` vs `1/7`
+never reads as a scene edit.
 
 **Verify cannot judge meaning.** Image review is mandatory: look for
 blank lanes, arrows reaching the wrong place, values that did not visibly change,

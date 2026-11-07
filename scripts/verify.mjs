@@ -150,6 +150,18 @@ async function runEdit({ name, file, root, plan, cache, hashes, identity, a11y }
   const start = Date.now();
   const addresses = readAddresses(name);
   const indexes = [...plan.dirty].sort((a, b) => a - b);
+  // Baselines are per capture mode, but the deck's step counts are not part of
+  // them: a baseline from a different structure would report chrome like "1/8"
+  // against "1/7" as a scene change. Re-key the baseline directory structurally.
+  const editDir = resolve(root, "edit");
+  const structure = JSON.stringify({ total: cache.total, chapters: cache.chapters });
+  let previousStructure = null;
+  try { previousStructure = readFileSync(resolve(editDir, "structure.json"), "utf8").trim(); } catch { /* first edit run */ }
+  if (previousStructure !== structure) {
+    rmSync(editDir, { recursive: true, force: true });
+    mkdirSync(editDir, { recursive: true });
+    writeFileSync(resolve(editDir, "structure.json"), structure);
+  }
   const browser = await chrome();
   const entries = {}, notes = [], artifacts = [];
   try {
@@ -159,7 +171,7 @@ async function runEdit({ name, file, root, plan, cache, hashes, identity, a11y }
       const out = resolve(root, "720", imageName(index));
       // Gate captures walk the deck, the edit loop deep-links; the two are each
       // deterministic but differ slightly, so compare within the same mode.
-      const baseline = resolve(root, "edit", imageName(index));
+      const baseline = resolve(editDir, imageName(index));
       const before = existsSync(baseline) ? readFileSync(baseline).toString("base64") : null;
       const shot = await shoot(browser, { name, file, inventory: addresses, address: step.address, width: 720, out, checks: a11y });
       const issues = shot.issues.map((issue) => `step ${index + 1}: ${issue}`);
@@ -167,7 +179,6 @@ async function runEdit({ name, file, root, plan, cache, hashes, identity, a11y }
       // A step with page/console errors stays uncached so the next run retries it.
       if (!shot.errors.length) entries[index] = { signature: shot.signature, issues, tallStage: shot.tallStage ?? null };
       artifacts.push(out);
-      mkdirSync(resolve(root, "edit"), { recursive: true });
       writeFileSync(baseline, readFileSync(out));
       if (before) {
         try {
