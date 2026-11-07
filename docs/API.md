@@ -618,6 +618,17 @@ cold seek: durable module-scope input state (sliders, answers) sits at its
 initial value, unlike the gate, which walks the deck. Address caches live in
 `shots/<name>/addresses.json` and are invalidated by any rebuild.
 
+**Verification is incremental.** Per-step results (signature, issues, tall
+stage, mid-motion sample) are cached in `shots/<name>/verify-cache.json` against
+content hashes of the files each step's scene depends on, plus the Node/Chrome
+build and the a11y flag. An unchanged deck re-gates without opening a browser; a
+one-scene edit re-verifies that scene's steps only; edits to `src/`, CSS,
+`main.ts` or an unparseable scene map invalidate everything. The cache reuses
+results only for byte-identical inputs, so it cannot launder a regression —
+`--refresh` forces a cold run. Re-captured steps are reported with a change
+percentage, a bounding box and a red-marked diff crop under
+`shots/<name>/diff/`.
+
 **Verify cannot judge meaning.** Image review is mandatory: look for
 blank lanes, arrows reaching the wrong place, values that did not visibly change,
 clipped text, overflow and layout jumps. `--quick` is only an inner loop;

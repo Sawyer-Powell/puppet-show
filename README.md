@@ -58,7 +58,8 @@ deck(document.body, { path: "puppet-show://demo", chapters: [{ title: "intro", s
 | `npm run scenes -- <name>` | list step addresses (`chapter/step`, `chapter/beat`) for one-step iteration |
 | `npm run shot -- <name> <address>` | render one step: PNG + settled issues in ~1s (deep link, no deck walk) |
 | `npm run verify -- <name> --quick` | scoped typecheck + build only, fail fast |
-| `npm run verify -- <name>` | typecheck + build + screenshots at 720/420 + live motion pass + replay check + contact sheets (~10-15s) |
+| `npm run verify -- <name>` | typecheck + build + screenshots at 720/420 + live motion pass + replay check + contact sheets (cold ~13-16s; unchanged deck ~0.5s from the per-step cache) |
+| `npm run verify -- <name> --refresh` | same gate, ignoring cached per-step results |
 | `npm run verify -- <name> --realtime` | same checks, real-time playback (timing debugging; slower) |
 
 The one example, `examples/puppet-show-explained`, explains puppet-show itself:

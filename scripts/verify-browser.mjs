@@ -180,9 +180,14 @@ export async function layoutIssues(page) {
   return [...layout, ...visibility];
 }
 
-export async function endpoints(browser, { file, out, width, a11y = true }) {
+/**
+ * Settled endpoint pass. `reuse` maps a step index to a previously verified
+ * entry; those steps are still walked (later steps need the deck to arrive at
+ * them) but not captured, so an unchanged scene costs a seek, not a render.
+ */
+export async function endpoints(browser, { file, out, width, a11y = true, reuse }) {
   mkdirSync(out, { recursive: true });
-  const errors = [], issues = [], signatures = [], tallStages = [];
+  const errors = [], issues = [], signatures = [], tallStages = [], captured = {}, reused = [];
   const page = await openDeck(browser, file, width, true, errors);
   try {
     // The first step autoplays even with reduced motion; next finishes it.
@@ -192,6 +197,15 @@ export async function endpoints(browser, { file, out, width, a11y = true }) {
     if (!Number.isInteger(total) || total < 1) throw new Error("invalid deck data-total");
     for (let i = 0; i < total; i++) {
       await paused(page, i);
+      const cached = reuse?.get(i);
+      if (cached) {
+        signatures.push(cached.signature);
+        issues.push(...cached.issues);
+        if (cached.tallStage) tallStages.push(cached.tallStage);
+        reused.push(i);
+        if (i + 1 < total) await advance(page);
+        continue;
+      }
       if (i === 0 && a11y) {
         issues.push(...(await keyboardIssues(page)).map(s => `step 1: ${s}`));
         // Tab reachability may scroll to footer controls. Restore the initial
@@ -200,13 +214,18 @@ export async function endpoints(browser, { file, out, width, a11y = true }) {
       }
       const size = await page.evaluate(stageSize);
       if (size) tallStages.push(`step ${i + 1}: ${size}`);
-      signatures.push(await signature(page));
-      issues.push(...(await layoutIssues(page)).map((s) => `step ${i + 1}: ${s}`));
-      if (a11y) issues.push(...(await page.evaluate(inspectA11y)).map(s => `step ${i + 1}: ${s}`));
+      const stepIssues = [
+        ...(await layoutIssues(page)).map((s) => `step ${i + 1}: ${s}`),
+        ...(a11y ? (await page.evaluate(inspectA11y)).map(s => `step ${i + 1}: ${s}`) : []),
+      ];
+      const digest = await signature(page);
+      signatures.push(digest);
+      issues.push(...stepIssues);
       await page.screenshot({ path: resolve(out, imageName(i)), fullPage: true });
+      captured[i] = { signature: digest, issues: stepIssues, tallStage: size ?? null };
       if (i + 1 < total) await advance(page);
     }
-    return { errors, issues, signatures, total, tallStages };
+    return { errors, issues, signatures, total, tallStages, captured, reused };
   } catch (e) { throw await diagnostic(page, e); }
   finally { await page.close(); }
 }
@@ -225,36 +244,62 @@ const midStep = (index) => {
  * Accessibility is not audited here: the settled states are the same ones the
  * endpoint pass audits at this width, so auditing twice only doubled the cost.
  */
-export async function motion(browser, { file, out, width = 720, clock = true }) {
+export async function motion(browser, { file, out, width = 720, clock = true, reuse }) {
   mkdirSync(out, { recursive: true });
-  const errors = [], signatures = [], issues = [], samples = [];
+  const errors = [], signatures = [], issues = [], samples = [], captured = {}, reused = [];
+  const flights = () => page.evaluate(() => window.__puppetShowFlights ?? []);
   const page = await openDeck(browser, file, width, false, errors, { clock });
   try {
     const total = Number(await page.locator(".ps-deck").getAttribute("data-total"));
+    let seenFlights = 0;
     for (let i = 0; i < total; i++) {
-      // Wait on frame-driven progress, never a guessed sleep. Very short or
-      // instant steps can finish before a capture; samples record that fact.
-      if (clock) await runUntil(page, midStep, i);
-      else await waitForDeck(page, midStep, i, { polling: "raf" });
-      samples.push(await page.locator(".ps-cell.on").evaluate((e) => Number(e.style.getPropertyValue("--p"))));
-      await page.screenshot({ path: resolve(out, imageName(i)), fullPage: true });
+      const cached = reuse?.get(i);
+      if (!cached) {
+        // Wait on frame-driven progress, never a guessed sleep. Very short or
+        // instant steps can finish before a capture; samples record that fact.
+        if (clock) await runUntil(page, midStep, i);
+        else await waitForDeck(page, midStep, i, { polling: "raf" });
+      }
+      const sample = cached ? cached.sample : await page.locator(".ps-cell.on").evaluate((e) => Number(e.style.getPropertyValue("--p")));
+      samples.push(sample);
+      if (!cached) await page.screenshot({ path: resolve(out, imageName(i)), fullPage: true });
       await paused(page, i, clock);
-      signatures.push(await signature(page));
-      issues.push(...(await layoutIssues(page)).map((s) => `step ${i + 1}: ${s}`));
+      const stepIssues = [];
+      if (!cached) {
+        const digest = await signature(page);
+        signatures.push(digest);
+        stepIssues.push(...(await layoutIssues(page)).map((s) => `step ${i + 1}: ${s}`));
+        // Flight issues are collected globally; slice them per step so results
+        // stay cacheable and attributable.
+        const all = await flights();
+        stepIssues.push(...all.slice(seenFlights));
+        seenFlights = all.length;
+        captured[i] = { signature: digest, issues: stepIssues, sample };
+      } else {
+        signatures.push(cached.signature);
+        stepIssues.push(...cached.issues);
+        // Cached steps still flew; keep the slice boundary consistent.
+        seenFlights = (await flights()).length;
+      }
+      issues.push(...stepIssues);
+      if (cached) reused.push(i);
       if (i + 1 < total) await advance(page);
     }
-    issues.push(...await page.evaluate(() => window.__puppetShowFlights ?? []));
-    return { errors, issues, signatures, total, samples };
+    issues.push(...(await flights()).slice(seenFlights));
+    return { errors, issues, signatures, total, samples, captured, reused };
   } catch (e) { throw await diagnostic(page, e); }
   finally { await page.close(); }
 }
 
 // Chrome renders the labelled grid too: no image-processing dependencies.
-export async function sheet(browser, out, total, destination, title) {
+// `steps` limits the sheet to a chapter, and two columns keep 720px steps wide
+// enough to read: a four-up grid is ~285px per step, where defects disappear.
+export async function sheet(browser, out, total, destination, title, { steps, columns = 4 } = {}) {
+  const indices = steps ?? Array.from({ length: total }, (_, i) => i);
   const page = await browser.newPage({ viewport: { width: 1200, height: 900 }, deviceScaleFactor: 1 });
   try {
-    const images = Array.from({ length: total }, (_, i) => `<figure><figcaption>step ${i + 1}</figcaption><img src="data:image/png;base64,${readFileSync(resolve(out, imageName(i))).toString("base64")}"></figure>`).join("");
-    await page.setContent(`<style>body{margin:16px;background:#181818;color:#eee;font:16px monospace}main{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}figure{margin:0}img{width:100%;display:block}figcaption{padding:6px}</style><h1></h1><main>${images}</main>`);
+    const images = indices.map((i) => `<figure><figcaption>step ${i + 1}</figcaption><img src="data:image/png;base64,${readFileSync(resolve(out, imageName(i))).toString("base64")}"></figure>`).join("");
+    await page.setContent(`<style>body{margin:16px;background:#181818;color:#eee;font:16px monospace}main{display:grid;grid-template-columns:repeat(${columns},1fr);gap:12px}figure{margin:0}img{width:100%;display:block}figcaption{padding:6px}</style><h1></h1><main>${images}</main>`);
     await page.locator("h1").evaluate((e, text) => { e.textContent = text; }, title);
     await page.evaluate(() => Promise.all([...document.images].map((im) => im.decode())));
     await page.screenshot({ path: destination, fullPage: true });

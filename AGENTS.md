@@ -20,13 +20,22 @@ Explainer design guidance lives in [`skills/explainer-design/SKILL.md`](./skills
    authoritative. `npm run verify -- <name> --quick` is only a
    typecheck/build smoke test.
    Gate: `npm run verify -- <name>` (note the `--`: npm swallows flags without it).
-   A full gate takes ~10-15 s because the 720 and 420 passes run concurrently
+   A cold gate takes ~13-16 s because the 720 and 420 passes run concurrently
    and live playback runs on a fake clock (`--realtime` replays in wall time
-   for timing debugging; the checks are identical).
+   for timing debugging; the checks are identical). Results are cached per step
+   against content hashes of the sources each step depends on
+   (`shots/<name>/verify-cache.json`), so an unchanged deck re-gates in ~0.5 s
+   without a browser and a one-scene edit re-verifies only that scene's steps
+   (~5-7 s). Every re-captured step is printed under "Changed since the last
+   verified run" with a percentage, a bounding box and a red-marked diff crop
+   in `shots/<name>/diff/`. `--refresh` ignores the cache; edited shared sources
+   (`src/`, CSS, `main.ts`) still invalidate the whole deck.
    It typechecks your example, builds `dist/examples/<name>/index.html`,
    screenshots every step at 720 px (Notion) and 420 px (phone), plays every
    step live with a mid-motion capture, checks that replaying a step lands on
-   the same state as playing it, and writes contact sheets. The viewport is
+   the same state as playing it, and writes contact sheets: 720 px sheets are
+   per chapter at two columns so text stays readable; motion and 420 px sheets
+   are deck-wide four-up grids. The viewport is
    900px high (fixed Notion block), even when PNGs are full-page. Live flights
    at each width must start/land on screen and keep document height/target
    geometry stable (4px tolerance). Settled checks reject text spilling into
