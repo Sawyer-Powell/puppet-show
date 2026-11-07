@@ -1,0 +1,33 @@
+{
+  "name": "puppet-show",
+  "version": "0.1.0",
+  "description": "Generator-driven, signal-based animation for interactive DOM explainers. Compiles to one small self-contained HTML file.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./style.css": "./src/ui/puppet-show.css"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "node scripts/build.mjs",
+    "build:lib": "vite build --config vite.lib.config.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --experimental-strip-types test/*.test.ts test/*.test.mjs",
+    "verify": "node scripts/verify.mjs",
+    "lint:design": "node scripts/lint-design.mjs",
+    "check:api": "node scripts/check-api-docs.mjs",
+    "check": "node scripts/lint-design.mjs && node scripts/check-api-docs.mjs && tsc --noEmit && node --test --experimental-strip-types test/*.test.ts test/*.test.mjs",
+    "build:webview": "vite build --config vite.webview.config.ts",
+    "build:extension": "npm run build:webview && npm --prefix vscode run build",
+    "test:debugger": "npm run build:webview && node --experimental-strip-types scripts/test-debugger.mjs",
+    "session": "node scripts/puppet-show.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "playwright-core": "^1.65.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.6",
+    "vite-plugin-singlefile": "^2.3.4"
+  }
+}

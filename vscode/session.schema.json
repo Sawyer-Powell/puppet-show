@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://puppet-show.local/session/v2",
+  "title": "puppet-show agent debugging session (v1 and v2)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "name", "launch"],
+  "properties": {
+    "$schema": {"$ref": "#/$defs/text"},
+    "version": {"enum": [1, 2]},
+    "name": {"$ref": "#/$defs/text"},
+    "launch": {"oneOf": [{"$ref": "#/$defs/text"}, {"$ref": "#/$defs/inlineLaunch"}, {"$ref": "#/$defs/launchOverride"}]},
+    "maxStops": {"type": "integer", "minimum": 1, "maximum": 1000000, "default": 10000},
+    "views": {"type": "array", "items": {"$ref": "#/$defs/view"}},
+    "breakpoints": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["id", "file"], "anyOf": [{"required": ["match"]}, {"required": ["line"]}], "properties": {
+      "id": {"$ref": "#/$defs/text"}, "file": {"$ref": "#/$defs/text"},
+      "match": {"$ref": "#/$defs/text", "description": "Unique line anchor: literal substring or /regex/flags."},
+      "line": {"type": "integer", "minimum": 1, "maximum": 9007199254740991, "description": "One-based missing-anchor fallback; never resolves ambiguity."},
+      "condition": {"type": "string"}, "kind": {"enum": ["stop", "probe"], "default": "stop"},
+      "label": {"type": "string"}, "note": {"type": "string"}
+    }}},
+    "collectors": {"type": "array", "items": {"oneOf": [{"enum": ["puppet-show", "source"]}, {"type": "object", "additionalProperties": false, "required": ["id", "kind", "expr"], "properties": {"id": {"$ref": "#/$defs/text"}, "kind": {"const": "evaluate"}, "expr": {"$ref": "#/$defs/text"}}}]}},
+    "redact": {"type": "array", "items": {"$ref": "#/$defs/text"}, "description": "Recursive key names (case-insensitive substring) or /regex/flags, replaced before rendering/export."},
+    "notes": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]}
+  },
+  "allOf": [{
+    "if": {"properties": {"version": {"const": 1}}},
+    "then": {"not": {"anyOf": [{"required": ["views"]}, {"required": ["maxStops"]}]}, "properties": {"launch": {"oneOf": [{"$ref": "#/$defs/text"}, {"$ref": "#/$defs/inlineLaunch"}]}}}
+  }],
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "path": {"type": "string", "pattern": "^[^.\\s](?:[^.]*[^.\\s])?(?:\\.[^.\\s](?:[^.]*[^.\\s])?)*$", "description": "Dotted path into stop.data: collector id first, then .value for structured collector results; scalar evaluate collectors use their id directly."},
+    "select": {"oneOf": [{"$ref": "#/$defs/path"}, {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/path"}}]},
+    "inlineLaunch": {"type": "object", "required": ["type", "request"], "properties": {"type": {"$ref": "#/$defs/text"}, "request": {"enum": ["launch", "attach"]}, "name": {"$ref": "#/$defs/text"}}},
+    "launchOverride": {"type": "object", "additionalProperties": false, "required": ["name", "url"], "properties": {"name": {"$ref": "#/$defs/text"}, "url": {"$ref": "#/$defs/text"}}},
+    "view": {
+      "type": "object", "additionalProperties": false, "required": ["id", "kind"],
+      "properties": {
+        "id": {"$ref": "#/$defs/text"},
+        "kind": {"enum": ["value", "series", "table", "tree", "events", "puppet-show:threads"]},
+        "select": {"$ref": "#/$defs/select"},
+        "lines": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["select"], "properties": {"select": {"$ref": "#/$defs/path"}, "label": {"$ref": "#/$defs/text"}}}},
+        "breakpoint": {"$ref": "#/$defs/text"}, "key": {"$ref": "#/$defs/text"},
+        "columns": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/text"}},
+        "children": {"$ref": "#/$defs/text"}, "label": {"$ref": "#/$defs/text"}, "template": {"$ref": "#/$defs/text"}
+      },
+      "allOf": [
+        {"if": {"properties": {"kind": {"enum": ["value", "table", "tree"]}}}, "then": {"required": ["select"]}},
+        {"if": {"properties": {"kind": {"const": "series"}}}, "then": {"oneOf": [{"required": ["select"]}, {"required": ["lines"]}]}, "else": {"not": {"required": ["lines"]}}}
+      ]
+    }
+  }
+}

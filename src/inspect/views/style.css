@@ -1,0 +1,38 @@
+@import "../../ui/puppet-show.css";
+html:has(> body > .x-state-debugger), body:has(> .x-state-debugger),
+html:has(> body > #app > .x-state-debugger), body:has(> #app > .x-state-debugger) { margin: 0; background: var(--ps-bg); }
+.x-state-debugger { box-sizing: border-box; width: 100%; min-width: 0; padding: 8px; background: var(--ps-bg); color: var(--ps-text); font: var(--ps-size-s)/1.45 var(--ps-font); }
+.x-state-debugger:focus-visible { outline: 1px solid var(--ps-accent); outline-offset: -1px; }
+.x-state-debugger *, .x-state-debugger *::before, .x-state-debugger *::after { box-sizing: inherit; }
+.x-state-header { display: flex; align-items: center; gap: 7px; height: 22px; white-space: nowrap; min-width: 0; }
+.x-state-title { flex: 1; min-width: 3ch; overflow: clip; text-overflow: ellipsis; color: var(--ps-strong); }
+.x-state-status, .x-state-count { flex-shrink: 0; }
+.x-state-count { color: var(--ps-muted); }
+.x-state-bp { color: var(--ps-accent); max-width: 8ch; overflow: clip; text-overflow: ellipsis; }
+.x-state-scrub { display: flex; height: 50px; border: 1px solid var(--ps-frame); border-radius: var(--ps-radius); margin: 3px 0 5px; padding: 2px 3px; outline-color: var(--ps-accent); }
+.x-state-lanes { display: flex; flex-direction: column; justify-content: space-around; width: 6ch; flex-shrink: 0; overflow: clip; }
+.x-state-lanes span { line-height: 11px; overflow: clip; white-space: nowrap; text-overflow: ellipsis; }
+.x-state-track { position: relative; min-width: 0; flex: 1; height: 44px; }
+.x-state-track canvas { position: absolute; inset: 0; width: 100%; height: 44px; }
+.x-state-cursor { cursor: crosshair; touch-action: none; }
+.x-state-note { min-height: 32px; height: 32px; line-height: 16px; overflow: clip; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; color: var(--ps-fg2); }
+.x-state-debugger code { font: inherit; color: var(--ps-accent); }
+.x-state-note b { color: var(--ps-strong); }
+.x-state-note::before { content: "› "; color: var(--ps-prompt); }
+.x-state-changed { height: 34px; line-height: 16px; overflow: clip; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; margin: 3px 0 8px; color: var(--ps-value); overflow-wrap: break-word; }
+.x-state-changed b { color: var(--ps-accent); font-weight: normal; }
+.x-state-debugger[data-pending="true"] .x-state-grid,
+.x-state-debugger[data-pending="true"] .x-state-note,
+.x-state-debugger[data-pending="true"] .x-state-changed { opacity: 0.5; }
+.x-state-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; min-width: 0; }
+.x-state-view { margin: 0; min-width: 0; }
+.x-state-kind-puppet-show-threads, .x-state-kind-table { grid-column: 1 / -1; }
+.x-state-kind-value, .x-state-kind-series { height: 118px; }
+.x-state-kind-value .x-declared-body, .x-state-kind-series .x-declared-body { height: 82px; }
+.x-state-kind-puppet-show-threads { height: 156px; }
+.x-state-kind-puppet-show-threads .x-declared-body { height: 120px; }
+.x-state-kind-table { height: 110px; }
+.x-state-kind-table .x-declared-body { height: 74px; }
+.x-state-debugger .ps-panel { padding: 9px 7px 6px; }
+.x-state-debugger .ps-panel-title { font-size: var(--ps-size-s); }
+@media (max-width: 300px) { .x-state-grid { grid-template-columns: minmax(0, 1fr); } .x-state-status { max-width: 2ch; overflow: clip; } }

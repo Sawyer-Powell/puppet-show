@@ -1,0 +1,7 @@
+node_modules
+dist/
+shots*/
+.scratch/
+.puppet-show/
+vscode/out/
+vscode/.vscode-test/

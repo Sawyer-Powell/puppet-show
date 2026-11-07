@@ -1,0 +1,23 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run puppet-show extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}/vscode", "${workspaceFolder}"],
+      "preLaunchTask": "Build puppet-show debugger",
+      "outFiles": ["${workspaceFolder}/vscode/out/**/*.js"]
+    },
+    {
+      "name": "Debug puppet-show-explained",
+      "type": "pwa-chrome",
+      "request": "launch",
+      "url": "http://localhost:5173/puppet-show-explained/",
+      "webRoot": "${workspaceFolder}",
+      "runtimeExecutable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "preLaunchTask": "puppet-show dev server",
+      "sourceMaps": true
+    }
+  ]
+}

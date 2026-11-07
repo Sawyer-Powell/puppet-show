@@ -1,0 +1,104 @@
+# puppet-show
+
+Generator-driven, signal-based animation for interactive explainers in the DOM.
+It borrows Motion Canvas semantics (scenes are generators, properties are
+signals, `yield*` sequences time) and adds click-through steps, seeking by
+replay, and a quiet terminal design language. One command builds an explainer
+into a single self-contained HTML file (~85 KB, fonts included) that works
+offline, from `file://`, or in a sandboxed HTML embed (e.g. a Notion HTML block).
+
+```ts
+import { deck, el, panel, narrate, beat, all, type View } from "puppet-show";
+
+function* intro(view: View) {
+  const box = el("div.ps-box", { opacity: 0 }, "box");
+  view.add(panel("stage", {}, box));
+
+  yield* narrate("A *signal* with a duration is a tween.", box.opacity(1, 0.4));
+  yield* beat();
+  yield* narrate("`all()` runs tasks in parallel.", all(box.x(200, 1), box.text("moved", 0.6)));
+}
+
+deck(document.body, { path: "puppet-show://demo", chapters: [{ title: "intro", scene: intro }] });
+```
+
+## Commands
+
+| command | what |
+| --- | --- |
+| `npm run dev` | serve `examples/` with hot reload (open `/puppet-show-explained/`) |
+| `npm run build [name...]` | each example → `dist/examples/<name>/index.html`, fully inlined |
+| `npm run build:lib` | `dist/lib/puppet-show.js` + `dist/lib/puppet-show.css` for use in a web app |
+| `npm test` | runtime semantics (node, no browser) |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run verify -- <name> --quick` | inner loop: scoped typecheck + build only, fail fast |
+| `npm run verify -- <name>` | typecheck + build + screenshots at 720/420 + live motion pass + replay check + contact sheets |
+
+The one example, `examples/puppet-show-explained`, explains puppet-show itself:
+scenes as generators, `yield` vs `yield*`, logical time, and seeking by replay.
+`recipes/gallery` is the component catalogue with copyable recipes.
+
+Full signatures: [`docs/API.md`](./docs/API.md). Recipes: `recipes/gallery/`.
+VS Code debugger (experimental): `vscode/` is an extension that records
+program state at agent-placed probes and renders it in a pinned pane; see
+[`docs/debugger/AGENT.md`](./docs/debugger/AGENT.md). Build with
+`npm run build:extension`; drive sessions with `npm run session -- start|status|stop`.
+
+Agents: start with [`AGENTS.md`](./AGENTS.md). Explainer design guidance:
+[`skills/explainer-design/SKILL.md`](./skills/explainer-design/SKILL.md).
+The runtime provides composable capabilities; the skill discusses how to use them.
+
+## Model
+
+- **Signal**: `const x = signal(0)`. `x()` reads, `x(5)` writes, `x(5, 0.4, ease)` returns
+  a tween task. `.to(v, d)` chains keyframes. Numbers lerp, hex colours blend,
+  other strings *retype* (erase to common prefix, then type).
+- **Task**: a generator. `yield` waits one frame; `yield* task` runs it to
+  completion; `yield task` forks it.
+- **Flow**: `all`, `any`, `chain`, `sequence(stagger, ...)`, `delay`, `loop`,
+  `waitFor`, `waitUntil`. Plain callbacks are allowed as instant steps.
+- **Logical time**: every thread records exactly when its last operation was
+  meant to end; the next one starts from there, not from the late frame. Chains
+  never drift and results do not depend on frame rate.
+- **Beat**: `yield* beat()` ends a step. The player stops the clock there.
+- **Seek = replay**: to show step *i*, the player disposes the run, reruns the
+  scene generator and fast-forwards at 1/60 s with effects held, then flushes
+  once (~2 µs per simulated frame). Scenes never need undo code.
+- **Node**: `el("div.cls", props, ...children)` returns a `Node` with `x`, `y`,
+  `scale`, `rotate`, `opacity`, `text` signals, plus `css(prop)`, `attr(name)`
+  and `flag(class)` signals. Layout stays in CSS. Function-valued props and
+  children are reactive.
+- **Layout-aware motion**: `fly(from, to, label)` sends a token through the
+  overlay; `move(node, parent)` reparents with FLIP. Both skip measurement
+  while seeking.
+- **Deep links**: deck steps use `#chapter/ending-beat` URLs; `deck.href()` builds links, `hash: false` opts out, and `hash: "push"` enables Back/Forward.
+- **Deck**: chapters are scenes; beats are steps. `say()` / `narrate()` set
+  the caption instantly by default (typing is opt-in). Keys: `←/→` step, `r` replay, `s` slow-mo. Honours
+  `prefers-reduced-motion` by jumping to the end of each step.
+
+State that must survive replays (slider values, user input) lives in signals
+created *outside* the scene function; the scene reads them reactively.
+
+## Design language
+
+Gruvbox dark hard, JetBrains Mono NL (subset, OFL, embedded), one size scale
+(11 / 13 / 15 px). Hairline TUI frames with the title cut into the border,
+colour reserved for meaning: yellow = focus/accent, aqua = values,
+orange = prompt, red = error/drift, blue/purple/aqua/green to tell lanes apart.
+Tokens are CSS variables (`--ps-*`) and `palette` in JS. See
+[`AGENTS.md`](./AGENTS.md) for the authoring contract.
+
+## Layout
+
+```
+src/core/   signal, thread (runtime + logical time), flow, player, ease, interp
+src/dom/    node (reactive elements), view (fly, move)
+src/ui/     optional deck shell, code, components, markup, puppet-show.css, fonts/
+src/blocks/ input, annotations, focus, temporal traces, composition, orientation
+examples/   one explainer: puppet-show-explained
+recipes/    gallery: copyable component recipes
+test/       runtime and browser tests
+scripts/    build, verify, design/API gates, debugger session CLI
+src/inspect/ opt-in state inspector + debugger pane views (webview bundle)
+vscode/     VS Code debugger extension
+```

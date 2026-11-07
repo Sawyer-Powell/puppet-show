@@ -1,0 +1,55 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {History, selectData, seriesSample} from '../src/model.ts';
+import {PostBatcher} from '../src/batch.ts';
+import type {Stop, ToView, ViewSpec} from '../src/protocol.ts';
+const make = (bp: string, n: number): Omit<Stop, 'seq'> => ({reason: 'breakpoint', threadId: 0, frames: [], agent: {breakpointId: bp, kind: 'probe'}, data: {clock: {ok: true, value: n}, "puppet-show": {ok: true, value: {nodes: [{id: n}], deck: {time: n}}}}});
+const views: ViewSpec[] = [{id: 'time', kind: 'series', lines: [{select: 'clock'}, {select: 'puppet-show.value.deck.time'}], breakpoint: 'frame'}];
+test('bounded ring retains absolute seq and previous-of-same-breakpoint', () => {
+  const h = new History({id: 'x', name: 'test'}, views, 3);
+  h.append(make('frame', 0)); h.append(make('join', 1)); h.append(make('frame', 2));
+  assert.equal(h.fetch(2)?.prev?.seq, 0);
+  h.append(make('join', 3));
+  assert.equal(h.size, 3); assert.equal(h.first, 1); assert.equal(h.total, 4);
+  assert.equal(h.fetch(2)?.prev, null); assert.equal(h.fetch(3)?.prev?.seq, 1);
+  assert.equal(h.select(-100)?.stop.seq, 1);
+  assert.equal(h.select(100)?.stop.seq, 3);
+  for (let i = 4; i < 10000; i++) h.append(make('frame', i));
+  assert.equal(h.size, 3); assert.equal(h.first, 9997); assert.equal(h.fetch(9999)?.prev?.seq, 9998);
+  const replay = h.replay();
+  assert.equal(replay.find(m => m.type === 'index')?.from, 9997);
+  assert.deepEqual(replay.filter(m => m.type === 'series').map(m => m.values), [[9997, 9998, 9999], [9997, 9998, 9999]]);
+});
+test('series resolves scalar/structured paths and preserves null alignment for filters', () => {
+  const stop = {...make('join', 4), seq: 0};
+  assert.equal(selectData(stop, 'clock'), 4);
+  assert.equal(selectData(stop, 'puppet-show.value.deck.time'), 4);
+  assert.equal(selectData(stop, 'puppet-show.deck.time'), 4);
+  assert.equal(selectData(stop, 'puppet-show.value.missing'), undefined);
+  assert.equal(selectData(stop, 'puppet-show.value.__proto__'), undefined);
+  assert.equal(seriesSample(stop, views[0]!, 'clock'), null);
+  stop.agent!.breakpointId = 'frame';
+  assert.equal(seriesSample(stop, views[0]!, 'clock'), 4);
+  stop.data.clock = {ok: true, value: Infinity};
+  assert.equal(seriesSample(stop, views[0]!, 'clock'), null);
+  const h = new History({id: 'x', name: 'test'}, views);
+  h.append(make('frame', 1)); h.append(make('join', 2)); h.append(make('frame', 3));
+  assert.deepEqual(h.replay().filter(m => m.type === 'series').map(m => m.values), [[1, null, 3], [1, null, 3]]);
+});
+test('post batching stays <=20 Hz, merges appends and replaces stale get replies', async () => {
+  const posts: {time: number; messages: ToView[]}[] = [];
+  const batch = new PostBatcher(messages => posts.push({time: performance.now(), messages}));
+  const h = new History({id: 'x', name: 'test'}, views);
+  batch.push(h.replay());
+  for (let i = 0; i < 100; i++) { batch.push(h.append(make('frame', i))); batch.push([h.select(i)!]); }
+  assert.equal(posts.length, 0);
+  await new Promise(resolve => setTimeout(resolve, 65));
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0]!.messages.filter(m => m.type === 'index').length, 1);
+  assert.equal(posts[0]!.messages.find(m => m.type === 'index')?.items.length, 100);
+  assert.equal(posts[0]!.messages.find(m => m.type === 'stop')?.stop.seq, 99);
+  batch.push(h.append(make('frame', 100)));
+  await new Promise(resolve => setTimeout(resolve, 65));
+  assert.ok(posts[1]!.time - posts[0]!.time >= 50);
+  batch.dispose();
+});

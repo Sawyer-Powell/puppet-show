@@ -1,0 +1,16 @@
+/* Uses the layer order declared in puppet-show.css; consumer CSS remains unlayered. */
+@layer puppet-show.reset, puppet-show.tokens, puppet-show.base, puppet-show.states, puppet-show.components, puppet-show.utilities;
+@layer puppet-show.components {
+.ps-collection { display: flex; min-width: 0; }
+.ps-collection-column { flex-direction: column; }
+.ps-collection-row { flex-direction: row; }
+.ps-collection-wrap { flex-direction: row; flex-wrap: wrap; }
+.ps-table-scroll { min-width: 0; max-width: 100%; overflow-x: auto; }
+.ps-table { display: grid; column-gap: var(--ps-space-12); grid-template-columns: var(--ps-table-columns); width: 100%; min-width: max-content; font-size: var(--ps-size-s); }
+.ps-table-head, .ps-table-body, .ps-table-row { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; }
+.ps-table-head { color: var(--ps-text-muted); border-bottom: var(--ps-border-width) solid var(--ps-border-decoration); }
+.ps-table-row { border-bottom: var(--ps-border-width) solid var(--ps-border-decoration); }
+.ps-table-cell { min-width: max-content; padding: var(--ps-table-cell-padding); white-space: nowrap; }
+@media (max-width: 480px) { .ps-table-cell { padding: var(--ps-table-cell-padding-compact); } }
+
+}

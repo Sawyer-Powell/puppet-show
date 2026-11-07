@@ -1,0 +1,19 @@
+/* Uses the layer order declared in puppet-show.css; consumer CSS remains unlayered. */
+@layer puppet-show.reset, puppet-show.tokens, puppet-show.base, puppet-show.states, puppet-show.components, puppet-show.utilities;
+@layer puppet-show.components {
+.ps-seq { width: 100%; min-width: 0; }
+.ps-seq-edge > path { stroke: var(--ps-seq-color); }
+.ps-seq-hosts { display: grid; gap: var(--ps-space-8); margin-bottom: var(--ps-space-20); }
+.ps-seq-host { min-width: 0; text-align: center; overflow-wrap: anywhere; color: var(--ps-text-default); font-size: var(--ps-size); }
+.ps-seq-body { position: relative; margin-bottom: var(--ps-space-16); }
+.ps-seq-lifeline { position: absolute; top: 0; bottom: 0; border-left: var(--ps-border-width) dashed var(--ps-border-default); }
+.ps-seq-row { position: absolute; left: 0; right: 0; border-top: var(--ps-border-width) dotted var(--ps-surface-selected); }
+.ps-seq-anchor { position: absolute; width: 0; height: 0; pointer-events: none; }
+.ps-seq-label { position: absolute; transform: translate(-50%, -100%); padding: var(--ps-space-2) var(--ps-space-4); background: var(--ps-surface-raised); font-size: var(--ps-size-s); text-align: center; overflow-wrap: anywhere; line-height: 1.4; }
+.ps-seq-lost { position: absolute; transform: translate(-50%, -50%); background: var(--ps-surface-raised); color: var(--ps-state-bad); font-size: var(--ps-size-l); line-height: 1; }
+@media (max-width: 480px) {
+  .ps-seq-host { font-size: var(--ps-size-s); }
+  .ps-seq-label { padding: var(--ps-space-2); }
+}
+
+}

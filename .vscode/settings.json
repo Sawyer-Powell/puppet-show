@@ -1,0 +1,5 @@
+{
+  // Keep the pinned puppet-show pane steady while an agent session steps.
+  "debug.focusEditorOnBreak": false,
+  "debug.focusWindowOnBreak": false
+}

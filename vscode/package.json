@@ -1,0 +1,87 @@
+{
+  "name": "puppet-show-debugger",
+  "displayName": "puppet-show debugger (local)",
+  "version": "0.0.1",
+  "private": true,
+  "engines": {
+    "vscode": "^1.132.0"
+  },
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onDebug",
+    "onCommand:puppet-show.openDebugger",
+    "onUri",
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "puppet-show.openDebugger",
+        "title": "puppet-show: Open Debugger"
+      },
+      {
+        "command": "puppet-show.startSession",
+        "title": "puppet-show: Start Agent Session"
+      },
+      {
+        "command": "puppet-show.stopSession",
+        "title": "puppet-show: Stop Agent Session"
+      }
+    ],
+    "viewsContainers": {
+      "secondarySidebar": [
+        {
+          "id": "puppet-show",
+          "title": "puppet-show",
+          "icon": "media/puppet-show.svg"
+        }
+      ]
+    },
+    "views": {
+      "puppet-show": [
+        {
+          "type": "webview",
+          "id": "puppet-show.debugger",
+          "name": "puppet-show",
+          "visibility": "visible"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "puppet-show",
+      "properties": {
+        "puppet-show.location": {
+          "type": "string",
+          "enum": [
+            "sidebar",
+            "editor"
+          ],
+          "default": "sidebar",
+          "description": "Debugger pane location. Sidebar is pinned outside editor groups; editor opens beside and locks its group."
+        }
+      }
+    },
+    "jsonValidation": [
+      {
+        "fileMatch": [
+          "**/.puppet-show/session.json",
+          "**/*.puppet-show-session.json"
+        ],
+        "url": "./session.schema.json"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "tsc --noEmit && esbuild src/extension.ts --bundle --platform=node --format=cjs --external:vscode --outfile=out/extension.js --sourcemap",
+    "test": "node --test --experimental-strip-types test/*.test.ts",
+    "test:e2e": "npm run build && node test/e2e.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.95.0",
+    "@vscode/test-electron": "^3.1.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.0"
+  },
+  "publisher": "puppet-show-local"
+}

@@ -1,0 +1,7 @@
+.x-stack { display: grid; gap: 16px; align-content: start; }
+.x-track { height: 64px; position: relative; }
+.x-token { position: absolute; top: 8px; left: 0; width: 9ch; }
+.x-vocab { display: grid; gap: 8px; }
+.x-term { display: grid; grid-template-columns: 8ch 1fr; gap: 1ch; align-items: baseline; }
+.x-term code { color: var(--ps-accent); }
+.x-term span { color: var(--ps-text-muted); font-size: var(--ps-size-s); }

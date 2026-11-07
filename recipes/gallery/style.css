@@ -1,0 +1,12 @@
+.x-stack {
+  display: grid;
+  gap: 18px;
+}
+/* Stable diagram tracks also keep connector geometry identical before/after font load. */
+.x-row > .ps-box { flex: 1; }
+.x-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 12px 0 18px;
+}
