@@ -1,5 +1,12 @@
 # Authoring explainers with puppet-show
 
+**Portable projects:** start with [`docs/authoring.md`](./docs/authoring.md), or
+`npx github:Sawyer-Powell/puppet-show docs authoring` from an installed package.
+Read `docs api` and `docs design` too. The default portable gate is fast
+`npx github:Sawyer-Powell/puppet-show check`; slow
+`check --deep` is rarely needed, only for user reports not found through check,
+shot, or sheets. The workflow below is for this source repository's contributors.
+
 Read this before writing or editing an explainer. It is the contract that keeps
 explainers consistent and keeps you out of debugging loops. Signatures and
 gotchas: [`docs/API.md`](./docs/API.md). Copyable recipes: `recipes/gallery/scenes/`.

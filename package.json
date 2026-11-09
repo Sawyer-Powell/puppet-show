@@ -23,13 +23,31 @@
     "build:webview": "vite build --config vite.webview.config.ts",
     "build:extension": "npm run build:webview && npm --prefix vscode run build",
     "test:debugger": "npm run build:webview && node --experimental-strip-types scripts/test-debugger.mjs",
-    "session": "node scripts/puppet-show.mjs"
+    "session": "node scripts/puppet-show.mjs",
+    "test:cli": "node scripts/test-portable.mjs"
   },
   "devDependencies": {
-    "@types/node": "^26.6.6",
-    "playwright-core": "^1.65.0",
-    "typescript": "^7.0.2",
+    "@types/node": "^26.6.6"
+  },
+  "bin": {
+    "puppet-show": "bin/puppet-show.mjs"
+  },
+  "files": [
+    "bin/",
+    "scripts/",
+    "src/",
+    "docs/",
+    "skills/explainer-design/",
+    "recipes/gallery/",
+    "vite.config.ts",
+    "tsconfig.json",
+    "LICENSE",
+    "README.md"
+  ],
+  "dependencies": {
     "vite": "^8.3.6",
-    "vite-plugin-singlefile": "^2.3.4"
+    "vite-plugin-singlefile": "^2.3.4",
+    "playwright-core": "^1.65.0",
+    "typescript": "^7.0.2"
   }
 }

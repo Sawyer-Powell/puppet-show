@@ -14,6 +14,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { sourceDir } from "./sources.mjs";
+import { packageRoot, projectContext } from "./project.mjs";
 
 export const CACHE_VERSION = 1;
 
@@ -21,13 +22,17 @@ const sha1 = (data) => createHash("sha1").update(data).digest("hex");
 const relative = (from, to) => resolve(dirname(from), to);
 
 const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
-  entry.isDirectory() ? walk(join(dir, entry.name)) : [join(dir, entry.name)]);
+  ["node_modules", "dist", ".puppet-show", ".git", ".jj", "shots"].includes(entry.name) ? [] :
+    entry.isDirectory() ? walk(join(dir, entry.name)) : [join(dir, entry.name)]);
 
 /** Content hashes of every file a deck is built from; mtime alone is not enough. */
 export function sourceHashes(name) {
   const root = sourceDir(name);
   if (!root) throw new Error(`no examples/${name}/index.html or recipes/${name}/index.html`);
-  const files = [...walk("src"), ...walk(root), "vite.config.ts"].filter((file) => existsSync(file));
+  const files = [...walk(join(packageRoot, "src")), ...walk(root),
+    join(packageRoot, "vite.config.ts"), join(packageRoot, "package.json"),
+    ...readdirSync(join(packageRoot, "scripts")).filter((file) => file.endsWith(".mjs")).map((file) => join(packageRoot, "scripts", file)),
+  ].filter((file) => existsSync(file));
   return Object.fromEntries(files.map((file) => [file, sha1(readFileSync(file))]));
 }
 
@@ -133,7 +138,7 @@ export function invalidation({ name, chapters, previous, hashes, identity, scene
   return { all: false, dirty, reason: `${touched.size} scene(s) changed` };
 }
 
-export const cachePath = (name) => `shots/${name}/verify-cache.json`;
+export const cachePath = (name) => join(projectContext(name).artifactDir, "verify-cache.json");
 
 export function loadCache(name) {
   try { return JSON.parse(readFileSync(cachePath(name), "utf8")); } catch { return null; }

@@ -4,8 +4,9 @@
 //
 //   node scripts/scenes.mjs <name> [--json] [--refresh] [--no-build]
 import { chrome } from "./verify-browser.mjs";
-import { ensureBuilt, loadInventory } from "./frames.mjs";
+import { distFile, ensureBuilt, loadInventory } from "./frames.mjs";
 import { sourceDir } from "./sources.mjs";
+import { projectRoot } from "./project.mjs";
 
 try {
   const usage = "usage: npm run scenes -- <name> [--json] [--refresh] [--no-build]";
@@ -21,7 +22,7 @@ try {
   if (!name || !sourceDir(name)) throw new Error(usage);
 
   const start = Date.now();
-  const { file, built, seconds: buildSeconds } = build ? ensureBuilt(name) : { file: `dist/examples/${name}/index.html`, built: false, seconds: 0 };
+  const { file, built, seconds: buildSeconds } = build ? ensureBuilt(name) : { file: distFile(name), built: false, seconds: 0 };
   const browser = await chrome();
   try {
     const { inventory, cached } = await loadInventory(browser, { name, file, refresh });
@@ -36,7 +37,7 @@ try {
         console.log(`\n${chapter}  (${steps.length} step${steps.length === 1 ? "" : "s"}, first at ${steps[0].index})`);
         for (const step of steps) console.log(`  ${String(step.index).padStart(2)}\t${step.address}`);
       }
-      console.log(`\nShoot one: npm run shot -- ${name} <address>`);
+      console.log(projectRoot() ? "\nShoot one: puppet-show shot <address>" : `\nShoot one: npm run shot -- ${name} <address>`);
     }
   } finally { await browser.close(); }
 } catch (error) {

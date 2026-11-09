@@ -6,17 +6,18 @@
 // than the whole explainer. `verify` stays the deck-wide gate.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { packageRoot, projectContext, projectRoot } from "./project.mjs";
 import { pathToFileURL } from "node:url";
 import { inspectA11y, keyboardIssues } from "./verify-a11y.mjs";
 import { stageSize } from "./verify-visibility.mjs";
 import { sourceStamp } from "./verify-cache.mjs";
 import { advance, diagnostic, layoutIssues, openDeck, paused, signature, viewportHeight, waitForDeck } from "./verify-browser.mjs";
 
-export const distFile = (name) => `dist/examples/${name}/index.html`;
-export const addressCache = (name) => `shots/${name}/addresses.json`;
+export const distFile = (name) => projectContext(name).distFile;
+export const addressCache = (name) => join(projectContext(name).artifactDir, "addresses.json");
 
-export const buildRecord = (name) => `dist/examples/${name}/build.json`;
+export const buildRecord = (name) => join(dirname(distFile(name)), "build.json");
 
 /**
  * Rebuild unless the deck on disk was built from exactly the current sources.
@@ -30,7 +31,7 @@ export function ensureBuilt(name) {
   try { current = existsSync(file) && JSON.parse(readFileSync(buildRecord(name), "utf8")).stamp === stamp; } catch { /* rebuild */ }
   if (current) return { file, stamp, built: false, seconds: 0 };
   const start = Date.now();
-  execFileSync(process.execPath, ["scripts/build.mjs", name], { stdio: "inherit" });
+  execFileSync(process.execPath, [join(packageRoot, "scripts/build.mjs"), name], { cwd: packageRoot, stdio: "inherit" });
   writeFileSync(buildRecord(name), JSON.stringify({ stamp, builtAt: new Date().toISOString() }, null, 2));
   return { file, stamp, built: true, seconds: (Date.now() - start) / 1000 };
 }
@@ -40,7 +41,7 @@ export function ensureBuilt(name) {
  * The walk is the slow-but-honest way to learn addresses; the result is cached
  * against the build stamp, and every later action deep-links instead.
  */
-export async function inventory(page) {
+export async function inventory(page, { onStep } = {}) {
   const total = Number(await page.locator(".ps-deck").getAttribute("data-total"));
   if (!Number.isInteger(total) || total < 1) throw new Error("invalid deck data-total");
   const steps = [];
@@ -51,7 +52,9 @@ export async function inventory(page) {
       const raw = new URL(page.url()).hash.slice(1);
       const [chapter, name = "1"] = raw.split("/").map(decodeURIComponent);
       if (!chapter) throw new Error(`step ${i + 1} has no hash address`);
-      steps.push({ index: i + 1, chapter, name, hash: raw, address: `${chapter}/${name}` });
+      const step = { index: i + 1, chapter, name, hash: raw, address: `${chapter}/${name}` };
+      steps.push(step);
+      if (onStep) await onStep(step);
     } catch (e) { throw await diagnostic(page, e); }
     if (i + 1 < total) await advance(page);
   }
@@ -131,7 +134,7 @@ const slug = (text) => text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^
 
 /** Stable per-address path, so re-shooting overwrites what the reviewer reads. */
 export function shotPath(name, step, width) {
-  return `shots/${name}/shot/${String(step.index).padStart(2, "0")}-${slug(step.name)}-${width}.png`;
+  return join(projectContext(name).artifactDir, projectRoot() ? "shots" : "shot", `${String(step.index).padStart(2, "0")}-${slug(step.name)}-${width}.png`);
 }
 
 /**
@@ -154,38 +157,60 @@ export function resolveTargets(inventory, address) {
  *
  * `checks: true` adds the a11y + keyboard audit. Default is the cheap visual
  * check (layout, spill, clipping, console errors): iteration wants pixels, and
- * the gate audits accessibility anyway.
+ * the gate audits accessibility anyway. `visualChecks: false` also skips stage
+ * measurement and replay signatures. A supplied `page` stays caller-owned and
+ * reloads for every cold seek; `captureCaption` adds a plain-text `caption`.
  */
-export async function shoot(browser, { name, file, inventory, address, width = 720, out, checks = false }) {
+export async function shoot(browser, { name, file, inventory, address, width = 720, out, checks = false, visualChecks = true, page: suppliedPage, captureCaption = false }) {
   const target = resolveAddress(inventory, address);
   const errors = [];
-  const page = await browser.newPage({ viewport: { width, height: viewportHeight }, deviceScaleFactor: 1, reducedMotion: "reduce" });
+  const page = suppliedPage ?? await browser.newPage({ viewport: { width, height: viewportHeight }, deviceScaleFactor: 1, reducedMotion: "reduce" });
   page.setDefaultTimeout(30_000);
-  page.on("pageerror", (e) => errors.push(String(e)));
-  page.on("console", (m) => {
+  if (suppliedPage) {
+    await page.setViewportSize({ width, height: viewportHeight });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+  }
+  const onError = (e) => errors.push(String(e));
+  const onConsole = (m) => {
     if (m.type() === "error" || (m.type() === "warning" && m.text().includes("puppet-show:"))) errors.push(m.text());
-  });
+  };
+  page.on("pageerror", onError);
+  page.on("console", onConsole);
   const destination = out ?? shotPath(name, target, width);
   try {
+    // Reload even on the same file/hash: reusable pages still need a cold seek.
+    if (suppliedPage && page.url() !== "about:blank") await page.goto("about:blank");
     await page.goto(`${pathToFileURL(resolve(file)).href}#${target.hash}`);
     await waitForDeck(page, () => !!document.querySelector(".ps-deck[data-total]"));
     await page.evaluate(() => document.fonts.ready);
     const index = Number(await page.locator(".ps-deck").getAttribute("data-index"));
     if (index + 1 !== target.index) throw new Error(`address ${target.address} says step ${target.index}, but the deck opened step ${index + 1}: the deck's step structure moved. Run the full gate (or \`npm run scenes -- <name> --refresh\`) to re-index addresses.`);
     await paused(page, index);
-    const issues = await layoutIssues(page);
+    const issues = visualChecks ? await layoutIssues(page) : [];
     if (checks) issues.push(...await page.evaluate(inspectA11y));
     if (checks && target.index === 1) {
       issues.push(...await keyboardIssues(page));
       // Tab reachability can scroll to the footer; capture the top of the step.
       await page.evaluate(() => scrollTo(0, 0));
     }
-    const tallStage = await page.evaluate(stageSize);
-    const digest = await signature(page);
+    const tallStage = visualChecks ? await page.evaluate(stageSize) : null;
+    const digest = visualChecks ? await signature(page) : null;
+    const caption = captureCaption ? await page.locator(".ps-caption").allTextContents().then((parts) => parts.join("\n")) : undefined;
     mkdirSync(dirname(destination), { recursive: true });
-    await page.screenshot({ path: destination, fullPage: true });
-    return { target, width, png: destination, signature: digest, tallStage, issues, errors };
+    // Portable check tiles drop the blank viewport below the deck's content.
+    const clip = captureCaption ? await page.evaluate(() => {
+      const bottoms = [...document.querySelectorAll(".ps-deck > *")]
+        .filter((node) => getComputedStyle(node).position === "static" && node.getBoundingClientRect().height)
+        .map((node) => node.getBoundingClientRect().bottom + scrollY);
+      return bottoms.length ? { x: 0, y: 0, width: innerWidth, height: Math.ceil(Math.min(Math.max(...bottoms) + 16, document.documentElement.scrollHeight)) } : null;
+    }) : null;
+    await page.screenshot({ path: destination, fullPage: true, ...(clip ? { clip } : {}) });
+    return { target, width, png: destination, signature: digest, tallStage, issues, errors, ...(captureCaption ? { caption } : {}) };
   } catch (e) { throw await diagnostic(page, e); }
-  finally { await page.close(); }
+  finally {
+    page.off("pageerror", onError);
+    page.off("console", onConsole);
+    if (!suppliedPage) await page.close();
+  }
 }
 

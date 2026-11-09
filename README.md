@@ -46,6 +46,19 @@ function* intro(view: View) {
 deck(document.body, { path: "puppet-show://demo", chapters: [{ title: "intro", scene: intro }] });
 ```
 
+## Use it from anywhere
+
+Create an explainer outside this repository with
+`npx github:Sawyer-Powell/puppet-show init my-explainer`, then `cd my-explainer`.
+No project install is needed. Read the installed guide with
+`npx github:Sawyer-Powell/puppet-show docs authoring` ([source](docs/authoring.md));
+`docs api`, `docs design`, and `docs recipes` provide packaged references.
+Use fast `npx github:Sawyer-Powell/puppet-show check` by default and inspect shots/contact sheets.
+Slow `check --deep` is rarely needed: reserve it for user reports not found via
+check, shot, or sheets. For local development, use
+`node /absolute/path/to/puppet-show/bin/puppet-show.mjs <cmd>` instead of npx.
+Commands below are source-repository contributor tooling.
+
 ## Commands
 
 | command | what |

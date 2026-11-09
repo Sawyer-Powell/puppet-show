@@ -9,7 +9,7 @@
 // cheap visual ones (layout, spill, clipping, console errors); `--checks` adds
 // the accessibility and keyboard audit.
 import { chrome } from "./verify-browser.mjs";
-import { ensureBuilt, loadInventory, resolveAddress, resolveTargets, shoot } from "./frames.mjs";
+import { distFile, ensureBuilt, loadInventory, resolveTargets, shoot } from "./frames.mjs";
 import { sourceDir } from "./sources.mjs";
 
 const usage = "usage: npm run shot -- <name> <address...> [--width 720] [--checks] [--json] [--no-build]";
@@ -33,7 +33,7 @@ try {
   const start = Date.now();
   const { file, built, seconds: buildSeconds } = build
     ? ensureBuilt(name)
-    : { file: `dist/examples/${name}/index.html`, built: false, seconds: 0 };
+    : { file: distFile(name), built: false, seconds: 0 };
   const browser = await chrome();
   const shots = [];
   let targets = [];

@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium } from "playwright-core";
+import { findChrome } from "./chrome.mjs";
 import { inspectA11y, keyboardIssues } from "./verify-a11y.mjs";
 import { inspectVisibility, observeFlights, stageSize } from "./verify-visibility.mjs";
 
@@ -27,7 +28,7 @@ export async function waitForDeck(page, predicate, arg, options) {
 }
 
 export const chrome = () => chromium.launch({
-  executablePath: process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  executablePath: findChrome(),
 });
 export const imageName = (i) => `${String(i + 1).padStart(2, "0")}.png`;
 

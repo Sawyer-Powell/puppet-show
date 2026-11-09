@@ -15,7 +15,8 @@ import { CACHE_VERSION, cachePath, invalidation, loadCache, sourceHashes, reusab
 import { readAddresses, ensureBuilt, loadInventory, shoot } from "./frames.mjs";
 import { diffPngs } from "./pixels.mjs";
 
-const defaultChrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+import { findChrome } from "./chrome.mjs";
+import { projectContext, typecheckConfig, typescriptBin } from "./project.mjs";
 
 function argumentsFor(args) {
   let name, widths = [720, 420], seenWidth = false, quick = false, a11y = true, realtime = false, refresh = false, edit = false;
@@ -71,7 +72,7 @@ function difference(a, b) {
 
 /** Everything cached results depend on besides the sources themselves. */
 function environment(a11y) {
-  const path = process.env.CHROME ?? defaultChrome;
+  const path = findChrome();
   let stamp = "missing";
   try { const stat = statSync(path); stamp = `${stat.size}:${Math.round(stat.mtimeMs)}`; } catch { /* reported by the launch error */ }
   // `a11y` belongs here: a --no-a11y run must never seed results a full gate reuses.
@@ -225,14 +226,9 @@ async function main() {
   const start = Date.now();
   console.log(`verify ${name}: ${quick ? "quick (scoped typecheck + build only)" : edit ? "edit requested (changed steps at 720px when a cache plan applies; otherwise the full gate)" : `endpoint widths ${widths.join(", ")}px; motion ${[...new Set([720, ...widths])].join(", ")}px; viewport height ${viewportHeight}px`}`);
   // Stable config + build info: tsc then only rechecks changed files (~0.3s).
-  const cacheDir = resolve("node_modules/.cache/puppet-show", name);
-  mkdirSync(cacheDir, { recursive: true });
-  const config = resolve(cacheDir, "tsconfig.json");
-  writeFileSync(config, JSON.stringify({
-    extends: resolve("tsconfig.json"), include: [resolve("src"), resolve(sourceDir(name))], exclude: [],
-    compilerOptions: { incremental: true, tsBuildInfoFile: resolve(cacheDir, "tsconfig.tsbuildinfo") },
-  }, null, 2));
-  if (!gate("scoped typecheck", "npx", ["tsc", "--noEmit", "-p", config])) return;
+  const context = projectContext(name);
+  const config = typecheckConfig(context.sourceDir, context.cacheDir);
+  if (!gate("scoped typecheck", process.execPath, [typescriptBin, "--noEmit", "-p", config])) return;
 
   // Build only when the deck is stale: a rebuild renumbers nothing but does
   // invalidate the address cache, which would force a fresh indexing walk.
@@ -243,7 +239,7 @@ async function main() {
     return;
   }
 
-  const file = built.file, root = resolve(`shots/${name}`);
+  const file = built.file, root = context.artifactDir;
   mkdirSync(root, { recursive: true });
   const identity = environment(auditsA11y);
   const hashes = sourceHashes(name);
